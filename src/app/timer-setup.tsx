@@ -1,15 +1,71 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing, typography } from '@/theme/colors';
+import { useSetupStore } from '@/store/setupStore';
+import { TimeWheelPicker } from '@/components/timer/TimeWheelPicker';
+import { QuickSelectChips } from '@/components/timer/QuickSelectChips';
+import { PrimaryButton } from '@/components/goal/PrimaryButton';
 
 /**
- * Page 3: Timer Setup (Placeholder)
- * To be implemented in the next iteration.
+ * Page 3: Timer Setup
+ * Quick-select chips + wheel picker (HH:MM:SS, default 00:25:00).
+ * "START FOCUS" activates the restriction shield and navigates to FocusTimer.
  */
 export default function TimerSetupScreen() {
+  const { goalText, restrictedApps, targetDurationSeconds, setTargetDuration } =
+    useSetupStore();
+
+  // Derive initial h/m/s from the store (default 25:00)
+  const [hours, setHours] = useState(
+    Math.floor(targetDurationSeconds / 3600)
+  );
+  const [minutes, setMinutes] = useState(
+    Math.floor((targetDurationSeconds % 3600) / 60)
+  );
+  const [seconds, setSeconds] = useState(targetDurationSeconds % 60);
+
+  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+  const isValid = totalSeconds > 0;
+
+  const handleWheelChange = useCallback(
+    (h: number, m: number, s: number) => {
+      setHours(h);
+      setMinutes(m);
+      setSeconds(s);
+    },
+    []
+  );
+
+  const handleChipSelect = useCallback((mins: number) => {
+    setHours(Math.floor(mins / 60));
+    setMinutes(mins % 60);
+    setSeconds(0);
+  }, []);
+
+  const handleStartFocus = () => {
+    if (!isValid) return;
+    // Haptic feedback on start
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    // Save duration to store
+    setTargetDuration(totalSeconds);
+    // Navigate to Focus Timer (shield activates there)
+    router.push('/focus-timer' as any);
+  };
+
+  const blockedCount = restrictedApps.length;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      {/* Header */}
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
@@ -24,12 +80,71 @@ export default function TimerSetupScreen() {
         </View>
       </View>
 
-      <View style={styles.body}>
-        <Text style={styles.comingSoon}>⏱️</Text>
-        <Text style={styles.title}>Focus Duration</Text>
-        <Text style={styles.subtitle}>
-          Timer setup screen — sẽ hoàn thành ở vòng lặp kế tiếp.
-        </Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title Section */}
+        <View style={styles.titleSection}>
+          <Text style={styles.title}>Focus Duration</Text>
+          <Text style={styles.subtitle}>
+            Chọn thời gian tập trung cho phiên học của bạn
+          </Text>
+        </View>
+
+        {/* Summary Badge */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Mục tiêu</Text>
+            <Text style={styles.summaryValue} numberOfLines={1}>
+              {goalText || 'Chưa đặt mục tiêu'}
+            </Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Ứng dụng bị chặn</Text>
+            <Text style={styles.summaryValue}>{blockedCount} apps</Text>
+          </View>
+        </View>
+
+        {/* Quick Select Chips */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Chọn nhanh</Text>
+          <QuickSelectChips
+            selectedMinutes={Math.floor(totalSeconds / 60)}
+            onSelect={handleChipSelect}
+          />
+        </View>
+
+        {/* Wheel Picker */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Hoặc chỉnh thủ công</Text>
+          <TimeWheelPicker
+            hours={hours}
+            minutes={minutes}
+            seconds={seconds}
+            onChange={handleWheelChange}
+          />
+        </View>
+
+        {/* Total Duration Display */}
+        <View style={styles.totalCard}>
+          <Text style={styles.totalLabel}>Tổng thời gian</Text>
+          <Text style={styles.totalValue}>
+            {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}:
+            {String(seconds).padStart(2, '0')}
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* Bottom Action */}
+      <View style={styles.bottomContainer}>
+        <PrimaryButton
+          label="BẮT ĐẦU TẬP TRUNG"
+          onPress={handleStartFocus}
+          disabled={!isValid}
+        />
       </View>
     </SafeAreaView>
   );
@@ -75,22 +190,83 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.accent,
   },
-  body: {
+  scrollView: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
   },
-  comingSoon: {
-    fontSize: 48,
-    marginBottom: spacing.md,
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  titleSection: {
+    marginBottom: spacing.lg,
   },
   title: {
-    ...typography.heading,
+    ...typography.title,
     marginBottom: spacing.sm,
   },
   subtitle: {
     ...typography.bodySecondary,
-    textAlign: 'center',
+    lineHeight: 20,
+  },
+  summaryCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  summaryLabel: {
+    ...typography.label,
+  },
+  summaryValue: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: spacing.md,
+  },
+  section: {
+    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    ...typography.label,
+    marginBottom: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  totalCard: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  totalLabel: {
+    ...typography.label,
+    color: colors.accent,
+    marginBottom: spacing.xs,
+  },
+  totalValue: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: colors.accent,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 2,
+  },
+  bottomContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background,
   },
 });

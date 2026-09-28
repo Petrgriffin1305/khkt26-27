@@ -16,6 +16,9 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="app-blocker-setup" />
         <Stack.Screen name="timer-setup" />
+        <Stack.Screen name="focus-timer" />
+        <Stack.Screen name="quiz" />
+        <Stack.Screen name="session-summary" />
       </Stack>
     </SafeAreaProvider>
   );

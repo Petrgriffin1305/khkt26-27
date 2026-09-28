@@ -3,17 +3,19 @@ import type { RestrictedApp, StudyMaterial } from '@/types';
 
 /**
  * Zustand store for the multi-step setup flow.
- * Shared across GoalInput → AppBlockerSetup → TimerSetup screens.
+ * Shared across GoalInput -> AppBlockerSetup -> TimerSetup -> FocusTimer screens.
  */
 interface SetupStore {
   goalText: string;
   materials: StudyMaterial[];
   restrictedApps: RestrictedApp[];
+  targetDurationSeconds: number;
   setGoalText: (text: string) => void;
   addMaterials: (materials: StudyMaterial[]) => void;
   removeMaterial: (id: string) => void;
   toggleApp: (app: RestrictedApp) => void;
   setRestrictedApps: (apps: RestrictedApp[]) => void;
+  setTargetDuration: (seconds: number) => void;
   reset: () => void;
 }
 
@@ -21,6 +23,7 @@ export const useSetupStore = create<SetupStore>((set) => ({
   goalText: '',
   materials: [],
   restrictedApps: [],
+  targetDurationSeconds: 25 * 60,
   setGoalText: (text) => set({ goalText: text }),
   addMaterials: (materials) =>
     set((state) => ({ materials: [...state.materials, ...materials] })),
@@ -38,5 +41,12 @@ export const useSetupStore = create<SetupStore>((set) => ({
       };
     }),
   setRestrictedApps: (apps) => set({ restrictedApps: apps }),
-  reset: () => set({ goalText: '', materials: [], restrictedApps: [] }),
+  setTargetDuration: (seconds) => set({ targetDurationSeconds: seconds }),
+  reset: () =>
+    set({
+      goalText: '',
+      materials: [],
+      restrictedApps: [],
+      targetDurationSeconds: 25 * 60,
+    }),
 }));
