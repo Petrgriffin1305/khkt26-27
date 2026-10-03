@@ -12,6 +12,9 @@ interface SetupStore {
   targetDurationSeconds: number;
   isCompleted: boolean;
   actualDurationSeconds: number;
+  distractionAttempts: number;
+  quizScore: number;
+  totalQuizQuestions: number;
   setGoalText: (text: string) => void;
   addMaterials: (materials: StudyMaterial[]) => void;
   removeMaterial: (id: string) => void;
@@ -20,6 +23,9 @@ interface SetupStore {
   setTargetDuration: (seconds: number) => void;
   setIsCompleted: (completed: boolean) => void;
   setActualDuration: (seconds: number) => void;
+  setDistractionAttempts: (count: number) => void;
+  setQuizScore: (score: number) => void;
+  setTotalQuizQuestions: (total: number) => void;
   reset: () => void;
 }
 
@@ -30,6 +36,9 @@ export const useSetupStore = create<SetupStore>((set) => ({
   targetDurationSeconds: 25 * 60,
   isCompleted: false,
   actualDurationSeconds: 0,
+  distractionAttempts: 0,
+  quizScore: 0,
+  totalQuizQuestions: 0,
   setGoalText: (text) => set({ goalText: text }),
   addMaterials: (materials) =>
     set((state) => ({ materials: [...state.materials, ...materials] })),
@@ -50,6 +59,9 @@ export const useSetupStore = create<SetupStore>((set) => ({
   setTargetDuration: (seconds) => set({ targetDurationSeconds: seconds }),
   setIsCompleted: (completed) => set({ isCompleted: completed }),
   setActualDuration: (seconds) => set({ actualDurationSeconds: seconds }),
+  setDistractionAttempts: (count) => set({ distractionAttempts: count }),
+  setQuizScore: (score) => set({ quizScore: score }),
+  setTotalQuizQuestions: (total) => set({ totalQuizQuestions: total }),
   reset: () =>
     set({
       goalText: '',
@@ -58,5 +70,8 @@ export const useSetupStore = create<SetupStore>((set) => ({
       targetDurationSeconds: 25 * 60,
       isCompleted: false,
       actualDurationSeconds: 0,
+      distractionAttempts: 0,
+      quizScore: 0,
+      totalQuizQuestions: 0,
     }),
 }));

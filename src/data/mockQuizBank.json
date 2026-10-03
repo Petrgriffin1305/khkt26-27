@@ -1,0 +1,34 @@
+[
+  {
+    "id": "q1",
+    "topicId": "default",
+    "questionText": "What is the time complexity of binary search on a sorted array of n elements?",
+    "options": ["O(n)", "O(log n)", "O(n log n)", "O(1)"],
+    "correctIndex": 1,
+    "explanation": "Binary search halves the search space with each comparison, so it runs in O(log n) time."
+  },
+  {
+    "id": "q2",
+    "topicId": "default",
+    "questionText": "Which data structure uses FIFO (First In, First Out) ordering?",
+    "options": ["Stack", "Queue", "Tree", "Graph"],
+    "correctIndex": 1,
+    "explanation": "A queue dequeues elements in the same order they were enqueued — first in, first out."
+  },
+  {
+    "id": "q3",
+    "topicId": "default",
+    "questionText": "In React Native, which component is used for touchable list rows?",
+    "options": ["View", "Pressable", "Text", "SafeAreaView"],
+    "correctIndex": 1,
+    "explanation": "Pressable provides a wrapper for detecting presses and supports pressed-state styling."
+  },
+  {
+    "id": "q4",
+    "topicId": "default",
+    "questionText": "What does the Pomodoro Technique primarily help with?",
+    "options": ["Memorizing facts", "Deep focus and time management", "Faster typing", "Group discussion"],
+    "correctIndex": 1,
+    "explanation": "Pomodoro breaks work into focused intervals, improving concentration and reducing burnout."
+  }
+]

@@ -38,6 +38,7 @@ export default function FocusTimerScreen() {
     reset,
     setIsCompleted,
     setActualDuration,
+    setDistractionAttempts,
   } = useSetupStore();
 
   // Fallback to 25 minutes if no target duration is set
@@ -67,12 +68,13 @@ export default function FocusTimerScreen() {
     // Set session as completed with full target duration
     setIsCompleted(true);
     setActualDuration(totalSeconds);
+    setDistractionAttempts(distractionAttempts);
     // Haptic feedback on completion
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     // Navigate to Quiz screen
     router.replace('/quiz' as any);
-  }, [setIsCompleted, setActualDuration, totalSeconds]);
+  }, [setIsCompleted, setActualDuration, setDistractionAttempts, distractionAttempts, totalSeconds]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -118,6 +120,7 @@ export default function FocusTimerScreen() {
             // Set session as incomplete with actual duration
             setIsCompleted(false);
             setActualDuration(elapsedSeconds);
+            setDistractionAttempts(distractionAttempts);
             // End restriction (shield deactivation) and navigate to summary
             router.replace('/session-summary' as any);
           },
