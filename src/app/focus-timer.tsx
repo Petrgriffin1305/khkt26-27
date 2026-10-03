@@ -1,9 +1,7 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  AppState,
-  AppStateStatus,
   Pressable,
   StyleSheet,
   Text,
@@ -13,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { CircularProgress } from '@/components/timer/CircularProgress';
 import { useSetupStore } from '@/store/setupStore';
+import { useDistractionMonitor } from '@/hooks/useDistractionMonitor';
 import { colors, radius, spacing, typography } from '@/theme/colors';
 
 /** Rotating motivational tips shown below the timer. */
@@ -32,15 +31,25 @@ const MOTIVATIONAL_TIPS = [
  * On give-up: confirmation alert, end session early, save as incomplete.
  */
 export default function FocusTimerScreen() {
-  const { goalText, targetDurationSeconds, reset } = useSetupStore();
+  const {
+    goalText,
+    targetDurationSeconds,
+    isCompleted,
+    reset,
+    setIsCompleted,
+    setActualDuration,
+  } = useSetupStore();
 
   // Fallback to 25 minutes if no target duration is set
   const totalSeconds = targetDurationSeconds || 25 * 60;
   const [remainingSeconds, setRemainingSeconds] = useState(totalSeconds);
   const [isRunning, setIsRunning] = useState(true);
-  const [distractionAttempts] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
-  const appState = useRef(AppState.currentState);
+
+  // Distraction monitoring — isolated in custom hook
+  const { distractionAttempts } = useDistractionMonitor({
+    isActive: isRunning,
+  });
 
   // Timer progress: 0 = just started, 1 = finished
   const progress = (totalSeconds - remainingSeconds) / totalSeconds;
@@ -55,12 +64,15 @@ export default function FocusTimerScreen() {
   // Handle timer completion
   const handleTimerComplete = useCallback(() => {
     setIsRunning(false);
+    // Set session as completed with full target duration
+    setIsCompleted(true);
+    setActualDuration(totalSeconds);
     // Haptic feedback on completion
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     // Navigate to Quiz screen
     router.replace('/quiz' as any);
-  }, []);
+  }, [setIsCompleted, setActualDuration, totalSeconds]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -88,25 +100,6 @@ export default function FocusTimerScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle app background/foreground transitions
-  // (In a real app, this would trigger the App Restriction Shield)
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (
-        appState.current.match(/inactive|background/) &&
-        nextAppState === 'active'
-      ) {
-        // App came to foreground — check if shield should remain active
-        // In production: verify restricted apps weren't opened
-      }
-      appState.current = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
   // Handle give-up / end early
   const handleGiveUp = () => {
     Alert.alert(
@@ -120,10 +113,13 @@ export default function FocusTimerScreen() {
           onPress: () => {
             // Haptic feedback for giving up
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-            // End restriction (shield deactivation)
-            // Save session as incomplete and reset
-            reset();
-            router.replace('/' as any);
+            // Calculate actual focus time (elapsed seconds)
+            const elapsedSeconds = totalSeconds - remainingSeconds;
+            // Set session as incomplete with actual duration
+            setIsCompleted(false);
+            setActualDuration(elapsedSeconds);
+            // End restriction (shield deactivation) and navigate to summary
+            router.replace('/session-summary' as any);
           },
         },
       ],

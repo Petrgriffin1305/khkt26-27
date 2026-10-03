@@ -10,12 +10,16 @@ interface SetupStore {
   materials: StudyMaterial[];
   restrictedApps: RestrictedApp[];
   targetDurationSeconds: number;
+  isCompleted: boolean;
+  actualDurationSeconds: number;
   setGoalText: (text: string) => void;
   addMaterials: (materials: StudyMaterial[]) => void;
   removeMaterial: (id: string) => void;
   toggleApp: (app: RestrictedApp) => void;
   setRestrictedApps: (apps: RestrictedApp[]) => void;
   setTargetDuration: (seconds: number) => void;
+  setIsCompleted: (completed: boolean) => void;
+  setActualDuration: (seconds: number) => void;
   reset: () => void;
 }
 
@@ -24,6 +28,8 @@ export const useSetupStore = create<SetupStore>((set) => ({
   materials: [],
   restrictedApps: [],
   targetDurationSeconds: 25 * 60,
+  isCompleted: false,
+  actualDurationSeconds: 0,
   setGoalText: (text) => set({ goalText: text }),
   addMaterials: (materials) =>
     set((state) => ({ materials: [...state.materials, ...materials] })),
@@ -42,11 +48,15 @@ export const useSetupStore = create<SetupStore>((set) => ({
     }),
   setRestrictedApps: (apps) => set({ restrictedApps: apps }),
   setTargetDuration: (seconds) => set({ targetDurationSeconds: seconds }),
+  setIsCompleted: (completed) => set({ isCompleted: completed }),
+  setActualDuration: (seconds) => set({ actualDurationSeconds: seconds }),
   reset: () =>
     set({
       goalText: '',
       materials: [],
       restrictedApps: [],
       targetDurationSeconds: 25 * 60,
+      isCompleted: false,
+      actualDurationSeconds: 0,
     }),
 }));
