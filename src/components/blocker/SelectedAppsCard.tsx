@@ -23,7 +23,7 @@ export function SelectedAppsCard({ apps }: SelectedAppsCardProps) {
       <View style={styles.iconsRow}>
         {displayApps.map((app) => (
           <View key={app.id} style={styles.iconWrapper}>
-            <AppIcon icon={app.icon} size="md" />
+            <AppIcon id={app.id} name={app.name} packageName={app.packageName} category={app.category} size="md" />
             <Text style={styles.appName} numberOfLines={1}>
               {app.name}
             </Text>

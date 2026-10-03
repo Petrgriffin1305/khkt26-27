@@ -10,8 +10,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { CircularProgress } from '@/components/timer/CircularProgress';
+import { DistractionAlertModal } from '@/components/timer/DistractionAlertModal';
 import { useSetupStore } from '@/store/setupStore';
 import { useDistractionMonitor } from '@/hooks/useDistractionMonitor';
+import { AVAILABLE_APPS } from '@/data/restrictedApps';
 import { colors, radius, spacing, typography } from '@/theme/colors';
 
 /** Rotating motivational tips shown below the timer. */
@@ -34,11 +36,11 @@ export default function FocusTimerScreen() {
   const {
     goalText,
     targetDurationSeconds,
-    isCompleted,
-    reset,
+    restrictedApps,
+    totalDistractionCount,
+    logDistraction,
     setIsCompleted,
     setActualDuration,
-    setDistractionAttempts,
   } = useSetupStore();
 
   // Fallback to 25 minutes if no target duration is set
@@ -47,10 +49,47 @@ export default function FocusTimerScreen() {
   const [isRunning, setIsRunning] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
 
+  // Distraction alert overlay state
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [violatingAppName, setViolatingAppName] = useState('');
+  const [simIndex, setSimIndex] = useState(0);
+
+  // Shared handler for a detected distraction (real or simulated):
+  // increment counters, log timestamp + app, pause the timer, show the alert.
+  const handleDistraction = useCallback(
+    (appId: string, appName: string) => {
+      logDistraction(appId, appName);
+      setViolatingAppName(appName);
+      setIsRunning(false);
+      setAlertVisible(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+        () => {},
+      );
+    },
+    [logDistraction],
+  );
+
   // Distraction monitoring — isolated in custom hook
-  const { distractionAttempts } = useDistractionMonitor({
+  useDistractionMonitor({
     isActive: isRunning,
+    onDistraction: (info) => handleDistraction(info.appId, info.appName),
   });
+
+  // Dismiss the alert and resume the session. The violation remains
+  // logged in the session state for the Quiz penalty at the end.
+  const handleAlertDismiss = useCallback(() => {
+    setAlertVisible(false);
+    setIsRunning(true);
+  }, []);
+
+  // Expo-friendly simulation hook: trigger the distraction alert manually.
+  const handleSimulateDistraction = useCallback(() => {
+    const pool =
+      restrictedApps.length > 0 ? restrictedApps : AVAILABLE_APPS;
+    const app = pool[simIndex % pool.length];
+    setSimIndex((prev) => prev + 1);
+    handleDistraction(app.id, app.name);
+  }, [restrictedApps, simIndex, handleDistraction]);
 
   // Timer progress: 0 = just started, 1 = finished
   const progress = (totalSeconds - remainingSeconds) / totalSeconds;
@@ -68,13 +107,12 @@ export default function FocusTimerScreen() {
     // Set session as completed with full target duration
     setIsCompleted(true);
     setActualDuration(totalSeconds);
-    setDistractionAttempts(distractionAttempts);
     // Haptic feedback on completion
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     // Navigate to Quiz screen
     router.replace('/quiz' as any);
-  }, [setIsCompleted, setActualDuration, setDistractionAttempts, distractionAttempts, totalSeconds]);
+  }, [setIsCompleted, setActualDuration, totalSeconds]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -120,7 +158,6 @@ export default function FocusTimerScreen() {
             // Set session as incomplete with actual duration
             setIsCompleted(false);
             setActualDuration(elapsedSeconds);
-            setDistractionAttempts(distractionAttempts);
             // End restriction (shield deactivation) and navigate to summary
             router.replace('/session-summary' as any);
           },
@@ -156,7 +193,7 @@ export default function FocusTimerScreen() {
         {/* Distraction Counter */}
         <View style={styles.counterCard}>
           <Text style={styles.counterLabel}>Distraction Attempts</Text>
-          <Text style={styles.counterValue}>{distractionAttempts}</Text>
+          <Text style={styles.counterValue}>{totalDistractionCount}</Text>
         </View>
 
         {/* Motivational Tip Card */}
@@ -164,7 +201,24 @@ export default function FocusTimerScreen() {
           <Text style={styles.tipEmoji}>&#128161;</Text>
           <Text style={styles.tipText}>{MOTIVATIONAL_TIPS[tipIndex]}</Text>
         </View>
+
+        {/* Simulation hook for testing the Distraction Alert in Expo Go */}
+        <Pressable
+          onPress={handleSimulateDistraction}
+          style={styles.simulateButton}
+          accessibilityRole="button"
+          accessibilityLabel="Simulate a distraction alert"
+        >
+          <Text style={styles.simulateText}>Mô phỏng ứng dụng bị chặn</Text>
+        </Pressable>
       </View>
+
+      <DistractionAlertModal
+        visible={alertVisible}
+        appName={violatingAppName}
+        onResume={handleAlertDismiss}
+        onAcceptViolation={handleAlertDismiss}
+      />
 
       {/* Emergency Action — Give Up / End Early */}
       <View style={styles.footer}>
@@ -281,6 +335,21 @@ const styles = StyleSheet.create({
     ...typography.bodySecondary,
     flex: 1,
     lineHeight: 20,
+  },
+  simulateButton: {
+    borderRadius: radius.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  simulateText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.accent,
   },
   footer: {
     paddingHorizontal: spacing.lg,

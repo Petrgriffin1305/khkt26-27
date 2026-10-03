@@ -37,6 +37,13 @@ export interface SetupState {
   materials: StudyMaterial[];
 }
 
+/** A single detected distraction event during a focus session. */
+export interface DistractionEvent {
+  timestamp: string; // ISO string
+  appId: string;
+  appName: string;
+}
+
 /** An app that can be blocked during focus mode. */
 export interface RestrictedApp {
   id: string;

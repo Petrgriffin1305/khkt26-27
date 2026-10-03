@@ -17,7 +17,7 @@ export function AppListItem({ app, isSelected, onToggle }: AppListItemProps) {
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
     >
-      <AppIcon icon={app.icon} size="md" selected={isSelected} />
+      <AppIcon id={app.id} name={app.name} packageName={app.packageName} category={app.category} size="md" selected={isSelected} />
       <View style={styles.info}>
         <Text style={styles.name}>{app.name}</Text>
         <Text style={styles.category}>{app.category}</Text>

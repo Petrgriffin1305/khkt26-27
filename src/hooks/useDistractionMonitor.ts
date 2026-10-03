@@ -12,7 +12,11 @@ interface UseDistractionMonitorOptions {
   /** Whether the monitor is active (true while shield is on). */
   isActive: boolean;
   /** Optional callback fired each time a distraction is detected. */
-  onDistraction?: () => void;
+  onDistraction?: (info: {
+    timestamp: string;
+    appId: string;
+    appName: string;
+  }) => void;
 }
 
 interface UseDistractionMonitorReturn {
@@ -79,7 +83,11 @@ export function useDistractionMonitor({
               Haptics.notificationAsync(
                 Haptics.NotificationFeedbackType.Warning,
               ).catch(() => {});
-              onDistractionRef.current?.();
+              onDistractionRef.current?.({
+                timestamp: new Date().toISOString(),
+                appId: 'external_app',
+                appName: 'Ứng dụng bên ngoài',
+              });
             }
           }
         }
