@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
-import { router } from "expo-router";
+import { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import { DistractionChart } from "@/components/history/DistractionChart";
+import { colors } from "@/theme/colors";
 import { request } from "@/services/api";
 import type { ApiSession, Stats } from "@/services/contracts";
 import { Screen, common, ErrorMessage } from "@/components/common/Screen";
@@ -12,15 +14,20 @@ export default function HistoryScreen() {
   const [totalPages, setTotalPages] = useState(1);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
   const load = useCallback(
-    (next = 1) =>
-      Promise.all([
+    (next = 1) => {
+      const current = ++requestId.current;
+      setBusy(true);
+      setError(null);
+      return Promise.all([
         request<{ data: ApiSession[]; pagination: { total_pages: number } }>(
-          `/sessions?page=${next}&limit=20`,
+          `/sessions?page=${next}&limit=20&sort=created_at%3Adesc`,
         ),
         request<Stats>("/sessions/stats?period=all"),
       ])
         .then(([history, summary]) => {
+          if (current !== requestId.current) return;
           setError(null);
           setSessions((old) =>
             next === 1 ? history.data : [...old, ...history.data],
@@ -29,17 +36,23 @@ export default function HistoryScreen() {
           setPage(next);
           setTotalPages(history.pagination.total_pages);
         })
-        .catch((e) =>
-          setError(e instanceof Error ? e.message : "Không tải được lịch sử."),
-        )
-        .finally(() => setBusy(false)),
+        .catch((e) => {
+          if (current === requestId.current)
+            setError(e instanceof Error ? e.message : "Không tải được lịch sử.");
+        })
+        .finally(() => {
+          if (current === requestId.current) setBusy(false);
+        });
+    },
     [],
   );
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void load();
-  }, [load]);
+    return () => { requestId.current++; };
+  }, [load]));
   return (
     <Screen title="Lịch sử học">
+      {busy && <ActivityIndicator color={colors.accent} accessibilityLabel="Đang tải lịch sử học" />}
       {stats && (
         <View style={common.card}>
           <Text style={common.text}>
@@ -53,6 +66,7 @@ export default function HistoryScreen() {
           </Text>
         </View>
       )}
+      {(!busy || sessions.length > 0) && !error && <DistractionChart sessions={sessions} />}
       <ErrorMessage message={error} />
       {error && (
         <PrimaryButton
@@ -67,6 +81,7 @@ export default function HistoryScreen() {
       {!busy && !error && sessions.length === 0 && (
         <Text style={common.muted}>Chưa có phiên học nào.</Text>
       )}
+      {!error && <PrimaryButton label="LÀM MỚI" onPress={() => { void load(); }} disabled={busy} />}
       {sessions.map((s) => (
         <View style={common.card} key={s.id}>
           <Text style={common.text}>{s.goal_text}</Text>
@@ -78,6 +93,7 @@ export default function HistoryScreen() {
             {s.is_completed ? "Hoàn thành" : "Dừng sớm"} · Quiz {s.quiz_score}/
             {s.total_quiz_questions}
           </Text>
+          <Text style={common.muted}>Mất tập trung: {s.distraction_attempts} lần</Text>
         </View>
       ))}
       {page < totalPages && (
