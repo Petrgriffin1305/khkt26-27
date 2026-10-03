@@ -1,6 +1,6 @@
-import React from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
-import { colors, radius, spacing, typography } from '@/theme/colors';
+import React from "react";
+import { StyleSheet, TextInput, View } from "react-native";
+import { colors, radius, spacing, typography } from "@/theme/colors";
 
 interface GoalTextInputProps {
   value: string;
@@ -12,7 +12,7 @@ interface GoalTextInputProps {
 export function GoalTextInput({
   value,
   onChangeText,
-  placeholder = 'Hôm nay bạn muốn học gì? (VD: Chương 3 Lịch sử...)',
+  placeholder = "Hôm nay bạn muốn học gì? (VD: Chương 3 Lịch sử...)",
 }: GoalTextInputProps) {
   return (
     <View style={styles.wrapper}>
@@ -22,6 +22,7 @@ export function GoalTextInput({
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
+        maxLength={500}
         multiline
         textAlignVertical="top"
         accessibilityLabel="Ô nhập mục tiêu học tập"
@@ -37,7 +38,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,

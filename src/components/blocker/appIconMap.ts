@@ -1,16 +1,22 @@
 import type { AppCategory } from '@/types';
+import type { ComponentProps } from 'react';
+import type Ionicons from '@expo/vector-icons/Ionicons';
+import type MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 /**
  * High-quality brand icon mapping for common distracting apps.
  * Used by AppIcon to render a proper vector icon with brand color
  * instead of an emoji/text fallback.
  */
-export interface AppIconSpec {
-  family: 'MaterialCommunityIcons' | 'Ionicons';
-  name: string;
-  /** Official brand color (hex). */
+export type AppIconSpec = {
+  family: 'Ionicons';
+  name: ComponentProps<typeof Ionicons>['name'];
   color: string;
-}
+} | {
+  family: 'MaterialCommunityIcons';
+  name: ComponentProps<typeof MaterialCommunityIcons>['name'];
+  color: string;
+};
 
 const BRAND_ICONS: Record<string, AppIconSpec> = {
   facebook: { family: 'Ionicons', name: 'logo-facebook', color: '#1877F2' },
@@ -26,7 +32,7 @@ const BRAND_ICONS: Record<string, AppIconSpec> = {
   amongus: { family: 'MaterialCommunityIcons', name: 'rocket-launch', color: '#E74C3C' },
   youtube: { family: 'Ionicons', name: 'logo-youtube', color: '#FF0000' },
   netflix: { family: 'MaterialCommunityIcons', name: 'movie', color: '#E50914' },
-  spotify: { family: 'Ionicons', name: 'logo-spotify', color: '#1DB954' },
+  spotify: { family: 'MaterialCommunityIcons', name: 'spotify', color: '#1DB954' },
   twitch: { family: 'Ionicons', name: 'logo-twitch', color: '#9146FF' },
   disney: { family: 'MaterialCommunityIcons', name: 'castle', color: '#113CCF' },
 };

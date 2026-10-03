@@ -1,44 +1,57 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
+  AppState,
+  BackHandler,
+  Modal,
+  ScrollView,
   Pressable,
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import { CircularProgress } from '@/components/timer/CircularProgress';
-import { DistractionAlertModal } from '@/components/timer/DistractionAlertModal';
-import { useSetupStore } from '@/store/setupStore';
-import { useDistractionMonitor } from '@/hooks/useDistractionMonitor';
-import { AVAILABLE_APPS } from '@/data/restrictedApps';
-import { colors, radius, spacing, typography } from '@/theme/colors';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
+import { CircularProgress } from "@/components/timer/CircularProgress";
+import { DistractionAlertModal } from "@/components/timer/DistractionAlertModal";
+import { AVAILABLE_APPS } from "@/data/restrictedApps";
+import { elapsedFocusSeconds } from "@/utils/focusClock";
+import type { DistractionEvent } from "@/types";
+import { useSetupStore } from "@/store/setupStore";
+import { useSessionRealtime } from "@/hooks/useSessionRealtime";
+import { useDistractionMonitor } from "@/hooks/useDistractionMonitor";
+import { colors, radius, spacing, typography } from "@/theme/colors";
 
 /** Rotating motivational tips shown below the timer. */
 const MOTIVATIONAL_TIPS = [
-  'Stay focused — you are building your future.',
-  'Small steps every day lead to big results.',
-  'The shield is active. Your goal is within reach.',
-  'Distractions are temporary. Progress is permanent.',
-  'You chose this goal. Now own it.',
-  'One session at a time. You have got this.',
+  "Stay focused — you are building your future.",
+  "Small steps every day lead to big results.",
+  "Your goal is within reach. Keep going.",
+  "Distractions are temporary. Progress is permanent.",
+  "You chose this goal. Now own it.",
+  "One session at a time. You have got this.",
 ];
 
 /**
  * Page 4 — Active Pomodoro Timer.
- * The App Restriction Shield is ACTIVE during this screen.
- * On completion: haptic feedback, unlock shield, navigate to Quiz.
+ * Expo Go records departures and shows a warning on return.
+ * On completion: haptic feedback, navigate to Quiz.
  * On give-up: confirmation alert, end session early, save as incomplete.
  */
 export default function FocusTimerScreen() {
   const {
     goalText,
     targetDurationSeconds,
+    startedAt,
+    clientId,
+    distractionAttempts,
+    distractionLog,
     restrictedApps,
-    totalDistractionCount,
+    focusPausedAt,
+    pausedDurationMs,
     logDistraction,
+    resumeFocus,
+    setDistractionAttempts,
     setIsCompleted,
     setActualDuration,
   } = useSetupStore();
@@ -48,48 +61,22 @@ export default function FocusTimerScreen() {
   const [remainingSeconds, setRemainingSeconds] = useState(totalSeconds);
   const [isRunning, setIsRunning] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
-
-  // Distraction alert overlay state
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [violatingAppName, setViolatingAppName] = useState('');
   const [simIndex, setSimIndex] = useState(0);
+  const ended = useRef(false);
 
-  // Shared handler for a detected distraction (real or simulated):
-  // increment counters, log timestamp + app, pause the timer, show the alert.
-  const handleDistraction = useCallback(
-    (appId: string, appName: string) => {
-      logDistraction(appId, appName);
-      setViolatingAppName(appName);
-      setIsRunning(false);
-      setAlertVisible(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-        () => {},
-      );
-    },
-    [logDistraction],
-  );
+  const sendDistraction = useSessionRealtime(isRunning && !!clientId);
 
   // Distraction monitoring — isolated in custom hook
+  const handleDistraction = (event: DistractionEvent) => {
+    if (ended.current || useSetupStore.getState().focusPausedAt) return;
+    logDistraction(event);
+    if (!event.simulated) sendDistraction();
+  };
   useDistractionMonitor({
-    isActive: isRunning,
-    onDistraction: (info) => handleDistraction(info.appId, info.appName),
+    isActive: isRunning && !focusPausedAt,
+    initialAttempts: useSetupStore.getState().distractionAttempts,
+    onDistraction: handleDistraction,
   });
-
-  // Dismiss the alert and resume the session. The violation remains
-  // logged in the session state for the Quiz penalty at the end.
-  const handleAlertDismiss = useCallback(() => {
-    setAlertVisible(false);
-    setIsRunning(true);
-  }, []);
-
-  // Expo-friendly simulation hook: trigger the distraction alert manually.
-  const handleSimulateDistraction = useCallback(() => {
-    const pool =
-      restrictedApps.length > 0 ? restrictedApps : AVAILABLE_APPS;
-    const app = pool[simIndex % pool.length];
-    setSimIndex((prev) => prev + 1);
-    handleDistraction(app.id, app.name);
-  }, [restrictedApps, simIndex, handleDistraction]);
 
   // Timer progress: 0 = just started, 1 = finished
   const progress = (totalSeconds - remainingSeconds) / totalSeconds;
@@ -98,39 +85,61 @@ export default function FocusTimerScreen() {
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   };
 
   // Handle timer completion
   const handleTimerComplete = useCallback(() => {
+    if (ended.current) return;
+    ended.current = true;
     setIsRunning(false);
+    setDistractionAttempts(useSetupStore.getState().distractionAttempts);
     // Set session as completed with full target duration
+    useSetupStore.getState().setStage("quiz");
     setIsCompleted(true);
     setActualDuration(totalSeconds);
     // Haptic feedback on completion
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+      () => {},
+    );
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     // Navigate to Quiz screen
-    router.replace('/quiz' as any);
-  }, [setIsCompleted, setActualDuration, totalSeconds]);
+    router.replace("/quiz");
+  }, [setIsCompleted, setActualDuration, totalSeconds, setDistractionAttempts]);
 
-  // Countdown timer effect
+  // Compare wall-clock time, since interval callbacks pause in the background.
   useEffect(() => {
+    if (!clientId || !startedAt) {
+      router.replace("/");
+      return;
+    }
     if (!isRunning) return;
+    const update = () => {
+      const state = useSetupStore.getState();
+      const remaining = totalSeconds - elapsedFocusSeconds(
+        startedAt, totalSeconds, state.pausedDurationMs, state.focusPausedAt,
+      );
+      setRemainingSeconds(remaining);
+      if (remaining === 0 && !state.focusPausedAt) handleTimerComplete();
+    };
+    update();
+    const interval = setInterval(update, 250);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") update();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [isRunning, handleTimerComplete, startedAt, totalSeconds, clientId, focusPausedAt, pausedDurationMs]);
 
-    const interval = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleTimerComplete();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isRunning, handleTimerComplete]);
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => true,
+    );
+    return () => subscription.remove();
+  }, []);
 
   // Rotate motivational tips every 15 seconds
   useEffect(() => {
@@ -140,35 +149,29 @@ export default function FocusTimerScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  const [confirmEnd, setConfirmEnd] = useState(false);
+
   // Handle give-up / end early
-  const handleGiveUp = () => {
-    Alert.alert(
-      'End Session Early?',
-      'Your progress will be saved as an incomplete session.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Session',
-          style: 'destructive',
-          onPress: () => {
-            // Haptic feedback for giving up
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-            // Calculate actual focus time (elapsed seconds)
-            const elapsedSeconds = totalSeconds - remainingSeconds;
-            // Set session as incomplete with actual duration
-            setIsCompleted(false);
-            setActualDuration(elapsedSeconds);
-            // End restriction (shield deactivation) and navigate to summary
-            router.replace('/session-summary' as any);
-          },
-        },
-      ],
-      { cancelable: true }
+  const endEarly = () => {
+    if (ended.current) return;
+    ended.current = true;
+    setConfirmEnd(false);
+    setIsRunning(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(
+      () => {},
     );
+    const state = useSetupStore.getState();
+    const elapsed = elapsedFocusSeconds(
+      startedAt, totalSeconds, state.pausedDurationMs, state.focusPausedAt,
+    );
+    useSetupStore.getState().setStage("session-summary");
+    setIsCompleted(false);
+    setActualDuration(elapsed);
+    router.replace("/session-summary");
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header — back action disabled per spec */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -177,11 +180,14 @@ export default function FocusTimerScreen() {
           </Text>
         </View>
         <View style={styles.shieldBadge}>
-          <Text style={styles.shieldBadgeText}>Shield Active</Text>
+          <Text style={styles.shieldBadgeText}>Theo dõi tập trung</Text>
         </View>
       </View>
 
-      <View style={styles.body}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body}>
+        <Text style={typography.bodySecondary}>
+          Ứng dụng ghi nhận gián đoạn; chưa chặn các ứng dụng khác.
+        </Text>
         {/* Circular Progress Ring with Countdown */}
         <View style={styles.timerContainer}>
           <CircularProgress progress={progress} size={280} strokeWidth={14}>
@@ -192,8 +198,8 @@ export default function FocusTimerScreen() {
 
         {/* Distraction Counter */}
         <View style={styles.counterCard}>
-          <Text style={styles.counterLabel}>Distraction Attempts</Text>
-          <Text style={styles.counterValue}>{totalDistractionCount}</Text>
+          <Text style={styles.counterLabel}>Số lần rời ứng dụng</Text>
+          <Text style={styles.counterValue}>{distractionAttempts}</Text>
         </View>
 
         {/* Motivational Tip Card */}
@@ -201,29 +207,34 @@ export default function FocusTimerScreen() {
           <Text style={styles.tipEmoji}>&#128161;</Text>
           <Text style={styles.tipText}>{MOTIVATIONAL_TIPS[tipIndex]}</Text>
         </View>
-
-        {/* Simulation hook for testing the Distraction Alert in Expo Go */}
-        <Pressable
-          onPress={handleSimulateDistraction}
-          style={styles.simulateButton}
-          accessibilityRole="button"
-          accessibilityLabel="Simulate a distraction alert"
-        >
-          <Text style={styles.simulateText}>Mô phỏng ứng dụng bị chặn</Text>
-        </Pressable>
-      </View>
+        {__DEV__ && (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.simulateButton}
+            onPress={() => {
+              const pool = restrictedApps.length ? restrictedApps : AVAILABLE_APPS;
+              const app = pool[simIndex % pool.length];
+              setSimIndex((value) => value + 1);
+              handleDistraction({ timestamp: new Date().toISOString(), appId: app.id, appName: app.name, simulated: true });
+            }}
+          >
+            <Text style={styles.simulateText}>Thử cảnh báo sao nhãng (mô phỏng)</Text>
+          </Pressable>
+        )}
+      </ScrollView>
 
       <DistractionAlertModal
-        visible={alertVisible}
-        appName={violatingAppName}
-        onResume={handleAlertDismiss}
-        onAcceptViolation={handleAlertDismiss}
+        visible={isRunning && !!focusPausedAt}
+        appName={distractionLog.at(-1)?.appName ?? "Ứng dụng bên ngoài"}
+        simulated={distractionLog.at(-1)?.simulated ?? false}
+        onResume={resumeFocus}
+        onAcceptViolation={resumeFocus}
       />
 
       {/* Emergency Action — Give Up / End Early */}
       <View style={styles.footer}>
         <Pressable
-          onPress={handleGiveUp}
+          onPress={() => setConfirmEnd(true)}
           style={styles.giveUpButton}
           accessibilityRole="button"
           accessibilityLabel="Give up and end session early"
@@ -231,6 +242,49 @@ export default function FocusTimerScreen() {
           <Text style={styles.giveUpText}>Give Up / End Early</Text>
         </Pressable>
       </View>
+      <Modal
+        visible={confirmEnd}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmEnd(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            padding: 24,
+            backgroundColor: colors.overlay,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.card,
+              borderRadius: 16,
+              padding: 24,
+              gap: 16,
+            }}
+          >
+            <Text style={typography.heading}>Kết thúc sớm?</Text>
+            <Text style={typography.body}>
+              Tiến trình sẽ được lưu thành phiên chưa hoàn thành.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setConfirmEnd(false)}
+              style={{ padding: 16 }}
+            >
+              <Text style={typography.body}>Tiếp tục tập trung</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={endEarly}
+              style={styles.giveUpButton}
+            >
+              <Text style={styles.giveUpText}>Kết thúc phiên học</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -241,9 +295,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
@@ -262,38 +316,38 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 2,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
   },
   shieldBadgeText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.accent,
   },
   body: {
-    flex: 1,
-    alignItems: 'center',
+    flexGrow: 1,
+    alignItems: "center",
     paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
+    justifyContent: "center",
     gap: spacing.lg,
   },
   timerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginVertical: spacing.lg,
   },
   timerText: {
     fontSize: 52,
-    fontWeight: '800',
+    fontWeight: "800",
     color: colors.text,
-    fontVariant: ['tabular-nums'],
+    fontVariant: ["tabular-nums"],
     letterSpacing: 2,
   },
   timerLabel: {
     ...typography.bodySecondary,
     marginTop: spacing.xs,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
   counterCard: {
@@ -301,10 +355,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
-    width: '100%',
+    width: "100%",
   },
   counterLabel: {
     ...typography.label,
@@ -312,21 +366,21 @@ const styles = StyleSheet.create({
   },
   counterValue: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.accent,
-    fontVariant: ['tabular-nums'],
+    fontVariant: ["tabular-nums"],
   },
   tipCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.md,
-    width: '100%',
+    width: "100%",
   },
   tipEmoji: {
     fontSize: 24,
@@ -336,37 +390,30 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 20,
   },
-  simulateButton: {
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    alignSelf: 'center',
-  },
-  simulateText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.accent,
-  },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
     paddingTop: spacing.sm,
   },
+  simulateButton: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: "dashed",
+    padding: spacing.md,
+  },
+  simulateText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   giveUpButton: {
     backgroundColor: colors.card,
     borderRadius: radius.pill,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
     borderColor: colors.danger,
   },
   giveUpText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.danger,
   },
 });

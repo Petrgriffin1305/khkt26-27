@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, AppStateStatus } from "react-native";
+import * as Haptics from "expo-haptics";
+import type { DistractionEvent } from "@/types";
 
 /**
  * Minimum time (in seconds) the app must be in the background
@@ -11,12 +12,9 @@ const DISTRACTION_THRESHOLD_SECONDS = 3;
 interface UseDistractionMonitorOptions {
   /** Whether the monitor is active (true while shield is on). */
   isActive: boolean;
+  initialAttempts?: number;
   /** Optional callback fired each time a distraction is detected. */
-  onDistraction?: (info: {
-    timestamp: string;
-    appId: string;
-    appName: string;
-  }) => void;
+  onDistraction?: (event: DistractionEvent) => void;
 }
 
 interface UseDistractionMonitorReturn {
@@ -39,9 +37,11 @@ interface UseDistractionMonitorReturn {
  */
 export function useDistractionMonitor({
   isActive,
+  initialAttempts = 0,
   onDistraction,
 }: UseDistractionMonitorOptions): UseDistractionMonitorReturn {
-  const [distractionAttempts, setDistractionAttempts] = useState(0);
+  const [distractionAttempts, setDistractionAttempts] =
+    useState(initialAttempts);
 
   // Ref to track current AppState without re-triggering the effect.
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -56,22 +56,29 @@ export function useDistractionMonitor({
   }, [onDistraction]);
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive) {
+      backgroundTimestampRef.current = null;
+      return;
+    }
+    appStateRef.current = AppState.currentState;
 
     const subscription = AppState.addEventListener(
-      'change',
+      "change",
       (nextAppState: AppStateStatus) => {
         const prevState = appStateRef.current;
 
         // App going to background or becoming inactive.
-        if (prevState === 'active' && nextAppState.match(/inactive|background/)) {
+        if (
+          prevState === "active" &&
+          nextAppState.match(/inactive|background/)
+        ) {
           backgroundTimestampRef.current = Date.now();
         }
 
         // App returning to foreground.
         if (
           prevState.match(/inactive|background/) &&
-          nextAppState === 'active'
+          nextAppState === "active"
         ) {
           if (backgroundTimestampRef.current !== null) {
             const elapsedSeconds =
@@ -85,8 +92,8 @@ export function useDistractionMonitor({
               ).catch(() => {});
               onDistractionRef.current?.({
                 timestamp: new Date().toISOString(),
-                appId: 'external_app',
-                appName: 'Ứng dụng bên ngoài',
+                appId: "unknown",
+                appName: "Ứng dụng bên ngoài",
               });
             }
           }

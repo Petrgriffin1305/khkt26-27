@@ -29,6 +29,8 @@ export interface StudyMaterial {
   uri: string;
   mimeType?: string;
   size?: number;
+  file?: File;
+  uploaded?: import("@/services/contracts").UploadedDocument;
 }
 
 /** Shape of the multi-step setup flow shared between screens. */
@@ -37,14 +39,15 @@ export interface SetupState {
   materials: StudyMaterial[];
 }
 
-/** A single detected distraction event during a focus session. */
+/** Expo Go detects leaving the app; a named app is only known in simulation. */
 export interface DistractionEvent {
-  timestamp: string; // ISO string
+  timestamp: string;
   appId: string;
   appName: string;
+  simulated?: boolean;
 }
 
-/** An app that can be blocked during focus mode. */
+/** An app selected for the user's focus plan. */
 export interface RestrictedApp {
   id: string;
   name: string;
@@ -54,7 +57,7 @@ export interface RestrictedApp {
 }
 
 /** Categories for quick preset selection. */
-export type AppCategory = 'social' | 'games' | 'streaming' | 'other';
+export type AppCategory = "social" | "games" | "streaming" | "other";
 
 /** Preset definition for quick selection. */
 export interface AppPreset {

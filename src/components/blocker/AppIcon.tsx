@@ -1,5 +1,6 @@
 import { StyleSheet, View } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '@/theme/colors';
 import { resolveAppIcon } from './appIconMap';
 import type { AppCategory } from '@/types';
@@ -30,8 +31,6 @@ export function AppIcon({
 
   const { container, iconSize } = sizeMap[size];
   const spec = resolveAppIcon({ id, name, packageName, category });
-  const IconComponent =
-    spec.family === 'Ionicons' ? Ionicons : MaterialCommunityIcons;
 
   return (
     <View
@@ -46,11 +45,11 @@ export function AppIcon({
         selected && styles.selected,
       ]}
     >
-      <IconComponent
-        name={spec.name as any}
-        size={iconSize}
-        color={selected ? spec.color : spec.color}
-      />
+      {spec.family === 'Ionicons' ? (
+        <Ionicons name={spec.name} size={iconSize} color={spec.color} />
+      ) : (
+        <MaterialCommunityIcons name={spec.name} size={iconSize} color={spec.color} />
+      )}
     </View>
   );
 }

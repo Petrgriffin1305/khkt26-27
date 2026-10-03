@@ -1,20 +1,18 @@
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { router } from "expo-router";
+import { useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { colors, radius, spacing, typography } from "@/theme/colors";
+import { useSetupStore } from "@/store/setupStore";
 import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing, typography } from '@/theme/colors';
-import { useSetupStore } from '@/store/setupStore';
-import { AVAILABLE_APPS, APP_PRESETS, getDefaultSelectedApps } from '@/data/restrictedApps';
-import { SelectedAppsCard } from '@/components/blocker/SelectedAppsCard';
-import { PresetToggle } from '@/components/blocker/PresetToggle';
-import { AppListItem } from '@/components/blocker/AppListItem';
-import type { RestrictedApp } from '@/types';
+  AVAILABLE_APPS,
+  APP_PRESETS,
+  getDefaultSelectedApps,
+} from "@/data/restrictedApps";
+import { SelectedAppsCard } from "@/components/blocker/SelectedAppsCard";
+import { PresetToggle } from "@/components/blocker/PresetToggle";
+import { AppListItem } from "@/components/blocker/AppListItem";
+import type { RestrictedApp } from "@/types";
 
 /**
  * Page 2: Distraction App Blocker
@@ -34,7 +32,7 @@ export default function AppBlockerSetupScreen() {
 
   const selectedIds = useMemo(
     () => new Set(initializedApps.map((a) => a.id)),
-    [initializedApps]
+    [initializedApps],
   );
 
   const handleToggleApp = (app: RestrictedApp) => {
@@ -45,12 +43,16 @@ export default function AppBlockerSetupScreen() {
     const preset = APP_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
 
-    const presetApps = AVAILABLE_APPS.filter((a) => preset.appIds.includes(a.id));
+    const presetApps = AVAILABLE_APPS.filter((a) =>
+      preset.appIds.includes(a.id),
+    );
     const allSelected = presetApps.every((a) => selectedIds.has(a.id));
 
     if (allSelected) {
       // Deselect all apps in this preset
-      const newApps = restrictedApps.filter((a) => !preset.appIds.includes(a.id));
+      const newApps = restrictedApps.filter(
+        (a) => !preset.appIds.includes(a.id),
+      );
       setRestrictedApps(newApps);
     } else {
       // Select all apps in this preset
@@ -67,17 +69,19 @@ export default function AppBlockerSetupScreen() {
   const isPresetActive = (presetId: string): boolean => {
     const preset = APP_PRESETS.find((p) => p.id === presetId);
     if (!preset) return false;
-    const presetApps = AVAILABLE_APPS.filter((a) => preset.appIds.includes(a.id));
+    const presetApps = AVAILABLE_APPS.filter((a) =>
+      preset.appIds.includes(a.id),
+    );
     return presetApps.every((a) => selectedIds.has(a.id));
   };
 
   const handleNext = () => {
     // Save selection and navigate to Timer Setup
-    router.push('/timer-setup' as any);
+    router.push("/timer-setup" as any);
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable
@@ -102,7 +106,8 @@ export default function AppBlockerSetupScreen() {
         <View style={styles.titleSection}>
           <Text style={styles.title}>Block Distractions</Text>
           <Text style={styles.subtitle}>
-            Chọn ứng dụng bạn muốn chặn trong phiên tập trung
+            Chọn ứng dụng gây xao nhãng. Bản hiện tại ghi nhận khi bạn rời ứng
+            dụng; chưa chặn ở cấp hệ điều hành.
           </Text>
         </View>
 
@@ -131,11 +136,9 @@ export default function AppBlockerSetupScreen() {
           accessibilityRole="button"
         >
           <Text style={styles.selectButtonText}>
-            {showAppList ? 'Hide App List' : 'Select Apps to Block'}
+            {showAppList ? "Hide App List" : "Select Apps to Block"}
           </Text>
-          <Text style={styles.selectButtonIcon}>
-            {showAppList ? '▲' : '▼'}
-          </Text>
+          <Text style={styles.selectButtonIcon}>{showAppList ? "▲" : "▼"}</Text>
         </Pressable>
 
         {/* App List */}
@@ -173,9 +176,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
@@ -185,14 +188,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: radius.pill,
     backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.border,
   },
   backIcon: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.text,
     lineHeight: 26,
   },
@@ -204,7 +207,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.accent,
   },
   scrollView: {
@@ -231,16 +234,16 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.label,
     marginBottom: spacing.sm,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   presetsContainer: {
     gap: spacing.sm,
   },
   selectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.card,
     borderRadius: radius.button,
     paddingVertical: spacing.md,
@@ -251,7 +254,7 @@ const styles = StyleSheet.create({
   },
   selectButtonText: {
     ...typography.body,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.accent,
   },
   selectButtonIcon: {
@@ -271,7 +274,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderRadius: radius.button,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    alignItems: "center",
   },
   nextButtonText: {
     ...typography.button,

@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique @db.VarChar(255)
+  name            String   @db.VarChar(100)
+  avatar_url      String?
+  auth_provider   String   @default("email")
+  auth_provider_id String?
+  password_hash   String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  refreshTokens   RefreshToken[]
+  sessions        StudySession[]
+  documents       Document[]
+  questions       QuizQuestion[]
+  @@unique([auth_provider, auth_provider_id])
+  @@map("users")
+}
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  token_hash String   @unique
+  user_id    String   @db.Uuid
+  expires_at DateTime
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  @@index([user_id])
+  @@map("refresh_tokens")
+}
+model Topic {
+  id        String @id @db.VarChar(50)
+  name      String
+  icon      String
+  questions QuizQuestion[]
+  sessions  StudySession[]
+  @@map("topics")
+}
+model StudySession {
+  id                      String @id @default(uuid()) @db.Uuid
+  user_id                 String @db.Uuid
+  client_id               String? @db.Uuid
+  goal_text               String
+  topic_id                String
+  target_duration_seconds Int
+  actual_duration_seconds Int @default(0)
+  distraction_attempts    Int @default(0)
+  quiz_score              Int @default(0)
+  total_quiz_questions    Int @default(0)
+  is_completed            Boolean @default(false)
+  apps_blocked            Json @default("[]")
+  documents               Json @default("[]")
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+  user                    User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  topic                   Topic @relation(fields: [topic_id], references: [id])
+  answers                 QuizAnswer[]
+  @@unique([user_id, client_id])
+  @@index([user_id, created_at])
+  @@index([topic_id])
+  @@map("study_sessions")
+}
+model QuizQuestion {
+  id            String @id @default(uuid()) @db.Uuid
+  topic_id      String
+  owner_id      String? @db.Uuid
+  question      String
+  options       Json
+  correct_index Int
+  explanation   String
+  difficulty    String @default("medium")
+  source        String @default("static")
+  created_at    DateTime @default(now())
+  topic         Topic @relation(fields: [topic_id], references: [id])
+  owner         User? @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  answers       QuizAnswer[]
+  @@index([topic_id, difficulty])
+  @@map("quiz_bank")
+}
+model QuizAnswer {
+  id             String @id @default(uuid()) @db.Uuid
+  session_id     String @db.Uuid
+  question_id    String @db.Uuid
+  selected_index Int
+  is_correct     Boolean
+  answered_at    DateTime @default(now())
+  session        StudySession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  question       QuizQuestion @relation(fields: [question_id], references: [id])
+  @@unique([session_id, question_id])
+  @@index([question_id])
+  @@map("quiz_sessions")
+}
+model Document {
+  id            String @id @default(uuid()) @db.Uuid
+  user_id       String @db.Uuid
+  name          String
+  storage_key   String @unique
+  mime_type     String
+  size_bytes    Int
+  created_at    DateTime @default(now())
+  user          User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  @@index([user_id])
+  @@map("documents")
+}

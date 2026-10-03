@@ -1,29 +1,31 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { radius, spacing, typography } from '@/theme/colors';
 
 interface DistractionAlertModalProps {
   visible: boolean;
   /** Name of the app the user accessed during the session. */
   appName: string;
+  simulated: boolean;
   onResume: () => void;
   onAcceptViolation: () => void;
 }
 
 /**
- * Full-screen active warning overlay shown when an off-limit
- * app is detected during a focus session. The countdown timer
+ * Warning on return from the background or a development simulation. The timer
  * is paused while this modal is visible.
  */
 export function DistractionAlertModal({
   visible,
   appName,
+  simulated,
   onResume,
   onAcceptViolation,
 }: DistractionAlertModalProps) {
   return (
     <Modal
       visible={visible}
+      transparent
       animationType="fade"
       statusBarTranslucent
       onRequestClose={onResume}
@@ -39,8 +41,9 @@ export function DistractionAlertModal({
           </View>
           <Text style={styles.header}>Cảnh báo Sao Nhãng!</Text>
           <Text style={styles.body}>
-            Bạn vừa truy cập{' '}
-            <Text style={styles.appName}>{appName}</Text> trong lúc đang học!
+            {simulated ? 'Mô phỏng truy cập ' : 'Bạn vừa rời ứng dụng trong lúc học. '}
+            {simulated && <Text style={styles.appName}>{appName}</Text>}
+            {'\n'}Đồng hồ tạm dừng đến khi bạn tiếp tục.
           </Text>
 
           <Pressable

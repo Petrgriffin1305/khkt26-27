@@ -14,7 +14,7 @@ export function SelectedAppsCard({ apps }: SelectedAppsCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.title}>Apps to Block</Text>
+        <Text style={styles.title}>Ứng dụng đã chọn</Text>
         <View style={styles.countBadge}>
           <Text style={styles.countText}>{apps.length}</Text>
         </View>

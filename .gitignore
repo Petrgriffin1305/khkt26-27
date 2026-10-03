@@ -39,3 +39,13 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+.env
+backend/.env
+backend/dist/
+coverage/
+
+backend/.local-data/
+
+# Exported patches are provided separately from source commits.
+patches/

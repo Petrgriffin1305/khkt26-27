@@ -1,0 +1,45 @@
+services:
+  api:
+    build: .
+    ports: ['3000:3000']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/pomodoro
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+    command: sh -c 'npm run db:migrate && npm run db:seed && npm start'
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      bucket: {condition: service_completed_successfully}
+  db:
+    image: postgres:15-alpine
+    environment: {POSTGRES_PASSWORD: postgres, POSTGRES_DB: pomodoro}
+    ports: ['127.0.0.1:5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d pomodoro']
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 20
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ':9001'
+    environment: {MINIO_ROOT_USER: local-minio, MINIO_ROOT_PASSWORD: local-minio-password}
+    ports: ['9000:9000', '127.0.0.1:9001:9001']
+    volumes: ['files:/data']
+  bucket:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on: [minio]
+    entrypoint: >-
+      /bin/sh -c 'until mc alias set local http://minio:9000 local-minio local-minio-password; do sleep 2; done;
+      mc mb --ignore-existing local/pomodoro-documents'
+volumes:
+  pgdata:
+  files:
