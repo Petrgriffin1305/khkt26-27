@@ -7,6 +7,11 @@ for (const signal of ["SIGINT", "SIGTERM"])
   });
 try {
   await app.listen({ port: config.PORT, host: config.HOST });
+  app.log.info(`Listening on http://${config.HOST}:${config.PORT}`);
+  if (config.HOST === "127.0.0.1" || config.HOST === "localhost")
+    app.log.warn(
+      "HOST đang là loopback — thiết bị thật trên LAN sẽ KHÔNG kết nối được. Đặt HOST=0.0.0.0.",
+    );
 } catch (err) {
   app.log.error(err);
   await app.close();

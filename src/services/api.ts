@@ -1,8 +1,28 @@
+import Constants from "expo-constants";
 import { tokenStorage } from "./tokenStorage";
 import type { Tokens } from "./contracts";
-export const API_URL = (
-  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/v1"
-).replace(/\/$/, "");
+
+function resolveApiUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  // Nếu env trỏ về localhost mà app chạy trên thiết bị thật -> không kết nối được.
+  const envIsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(
+    fromEnv ?? "",
+  );
+  if (fromEnv && !envIsLocalhost) return fromEnv.replace(/\/$/, "");
+  // Suy ra IP LAN của máy chạy Metro từ hostUri (thiết bị thật luôn thấy host phát dev server).
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest
+      ?.debuggerHost;
+  const hostIp = hostUri?.split(":")[0];
+  if (hostIp && hostIp !== "localhost" && hostIp !== "127.0.0.1")
+    return `http://${hostIp}:3000/api/v1`;
+  // Fallback cuối: localhost chỉ dùng cho web/iOS simulator, không dùng được trên máy thật.
+  return fromEnv?.replace(/\/$/, "") || "http://localhost:3000/api/v1";
+}
+
+export const API_URL = resolveApiUrl();
+console.log("API base URL:", API_URL);
 let accessToken: string | null = null;
 let expiresAt = 0;
 let refreshing: Promise<void> | null = null;
@@ -35,12 +55,29 @@ async function fetchWithTimeout(path: string, init: RequestInit) {
     () => controller.abort(),
     path === "/quizzes/generate" ? 100000 : 30000,
   );
+  const url = `${API_URL}${path}`;
+  console.log("Calling API URL:", url);
   try {
-    return await fetch(`${API_URL}${path}`, {
+    return await fetch(url, {
       ...init,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    const err = error as {
+      message?: string;
+      response?: unknown;
+      config?: { url?: string };
+    };
+    console.error(
+      "API request failed. message:",
+      err?.message,
+      "| response:",
+      err?.response,
+      "| config.url:",
+      err?.config?.url,
+      "| request URL:",
+      url,
+    );
     throw new ApiError(
       0,
       "Không kết nối được máy chủ. Kiểm tra mạng và địa chỉ API.",
