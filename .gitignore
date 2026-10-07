@@ -49,3 +49,6 @@ backend/.local-data/
 
 # Exported patches are provided separately from source commits.
 patches/
+
+# Desktop build outputs
+desktop/dist/

@@ -6,11 +6,12 @@ import * as Haptics from "expo-haptics";
 import { Screen, common, ErrorMessage } from "@/components/common/Screen";
 import { PrimaryButton } from "@/components/goal/PrimaryButton";
 import { useSetupStore } from "@/store/setupStore";
-import { loadQuiz, syncAnswers } from "@/services/study";
+import { loadQuiz, loadGeminiQuiz, syncAnswers } from "@/services/study";
+import { ConfidenceRating } from "@/components/quiz/ConfidenceRating";
 import { colors } from "@/theme/colors";
 export default function QuizScreen() {
   useBlockHardwareBack();
-  const { quizQuestions, answers, answer, materials, clientId, isCompleted } =
+  const { quizQuestions, answers, answer, materials, clientId, isCompleted, draftOptions, selectOption, confidenceRatings, setConfidence } =
     useSetupStore();
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(true);
@@ -42,6 +43,8 @@ export default function QuizScreen() {
   }, [clientId, isCompleted]);
   const question = quizQuestions[index];
   const selected = question ? answers[question.id] : undefined;
+  const draft = question ? draftOptions[question.id] : undefined;
+  const confidence = question ? confidenceRatings[question.id] : undefined;
   const next = async () => {
     setBusy(true);
     setError(null);
@@ -86,16 +89,11 @@ export default function QuizScreen() {
               accessibilityRole="button"
               accessibilityState={{
                 disabled: selected !== undefined || busy,
-                selected: selected === i,
+                selected: (selected ?? draft) === i,
               }}
               disabled={selected !== undefined || busy}
               onPress={() => {
-                answer(question.id, i);
-                void Haptics.notificationAsync(
-                  i === question.correct_index
-                    ? Haptics.NotificationFeedbackType.Success
-                    : Haptics.NotificationFeedbackType.Error,
-                ).catch(() => {});
+                selectOption(question.id, i);
               }}
               style={[
                 common.card,
@@ -106,7 +104,7 @@ export default function QuizScreen() {
                       ? colors.success
                       : selected === i
                         ? colors.danger
-                        : colors.border,
+                        : selected === undefined && draft === i ? colors.accent : colors.border,
                 },
               ]}
             >
@@ -115,6 +113,16 @@ export default function QuizScreen() {
               </Text>
             </Pressable>
           ))}
+          <ConfidenceRating value={confidence} disabled={busy || selected !== undefined}
+            onChange={rating => setConfidence(question.id, rating)} />
+          {selected === undefined && <PrimaryButton label="XÁC NHẬN ĐÁP ÁN"
+            disabled={busy || draft === undefined || !confidence}
+            onPress={() => {
+              if (draft === undefined || !confidence) return;
+              answer(question.id, draft);
+              void Haptics.notificationAsync(draft === question.correct_index
+                ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error).catch(() => {});
+            }} />}
           {selected !== undefined && (
             <View style={common.card}>
               <Text style={common.text}>
@@ -136,6 +144,17 @@ export default function QuizScreen() {
             }}
             disabled={selected === undefined || busy}
           />
+          {index === 0 && Object.keys(answers).length === 0 && <Pressable
+            accessibilityRole="button" disabled={busy}
+            onPress={() => {
+              setBusy(true); setError(null);
+              void loadGeminiQuiz().then(() => setIndex(0))
+                .catch(e => setError(e instanceof Error ? e.message : "Không tạo được quiz Gemini."))
+                .finally(() => setBusy(false));
+            }}>
+            <Text style={common.link}>Tạo quiz với Gemini</Text>
+            <Text style={common.muted}>Chủ đề và văn bản bạn nhập sẽ được gửi đến Google.</Text>
+          </Pressable>}
           {index === 0 &&
             Object.keys(answers).length === 0 &&
             materials.length > 0 && (

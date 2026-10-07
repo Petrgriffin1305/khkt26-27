@@ -1,0 +1,11 @@
+<!doctype html><html lang="vi"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>PomoFocus Windows</title><link rel="stylesheet" href="styles.css"></head>
+<body><main><h1>Phiên tập trung</h1><p>Windows Guard chỉ chặn trên máy đang chạy ứng dụng này.</p>
+<form id="focus-form"><label>Thời lượng (phút)<input id="minutes" type="number" value="25" min="1" max="1200" required></label>
+<fieldset><legend>Ứng dụng sẽ được đóng</legend><label><input type="checkbox" name="exe" value="discord.exe"> Discord</label><label><input type="checkbox" name="exe" value="chrome.exe"> Chrome</label><label><input type="checkbox" name="exe" value="steam.exe"> Steam</label></fieldset>
+<label><input id="confirmed" type="checkbox" required> Tôi đã lưu công việc và đồng ý đóng cưỡng bức các ứng dụng đã chọn. Có thể mất dữ liệu chưa lưu.</label>
+<button id="start" type="submit">Bắt đầu Focus</button></form>
+<p id="status" role="status"></p><p id="clock"></p><button id="pause" disabled>Tạm dừng</button><button id="stop" disabled>Kết thúc Focus</button>
+<p id="error" role="alert"></p><ul id="events"></ul><p>Ứng dụng quét mỗi 3 giây; không ngăn khởi chạy tức thời. Linux/macOS chỉ có đồng hồ, không chặn ứng dụng.</p>
+</main><script src="renderer.js"></script></body></html>

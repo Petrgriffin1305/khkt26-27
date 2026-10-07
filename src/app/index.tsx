@@ -4,7 +4,7 @@ import { request } from "@/services/api";
 import type { Topic } from "@/services/contracts";
 import { useSetupStore } from "@/store/setupStore";
 import { ErrorMessage } from "@/components/common/Screen";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GoalHeader } from "@/components/goal/GoalHeader";
 import { GoalTextInput } from "@/components/goal/GoalTextInput";
@@ -28,7 +28,7 @@ export default function GoalInputScreen() {
     handleRemove,
   } = useGoalSetup();
 
-  const { topicId, setTopicId, clientId, stage } = useSetupStore();
+  const { topicId, setTopicId, clientId, stage, documentText, setDocumentText } = useSetupStore();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const loadTopics = useCallback(() => {
@@ -125,6 +125,14 @@ export default function GoalInputScreen() {
         <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>
           TÀI LIỆU HỌC TẬP (TÙY CHỌN)
         </Text>
+        <Text style={styles.sectionLabel}>VĂN BẢN CHO GEMINI (TÙY CHỌN)</Text>
+        <TextInput
+          accessibilityLabel="Văn bản học tập cho Gemini"
+          multiline maxLength={50000} editable={!clientId}
+          value={documentText} onChangeText={setDocumentText}
+          placeholder="Dán nội dung bài học (ít nhất 10 ký tự) hoặc để trống để tạo theo chủ đề"
+          style={{ minHeight: 120, padding: 16, marginBottom: 16, backgroundColor: colors.card, color: colors.text, borderRadius: 14, textAlignVertical: "top" }}
+        />
         <MaterialsGrid
           materials={materials}
           onAdd={() => {

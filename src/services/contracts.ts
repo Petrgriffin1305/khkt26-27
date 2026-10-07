@@ -28,6 +28,20 @@ export interface ApiQuestion {
   correct_index: number;
   explanation: string;
 }
+export type ConfidenceRating = "low" | "medium" | "high";
+export interface GenerateQuizRequest {
+  topic: string;
+  documentText?: string;
+  count?: number;
+}
+export interface GeneratedQuizQuestion {
+  id: string;
+  question: string;
+  options: [string, string, string, string];
+  correctAnswerIndex: number;
+  explanation: string;
+}
+export type GenerateQuizResponse = GeneratedQuizQuestion[];
 export interface UploadedDocument {
   id: string;
   name: string;

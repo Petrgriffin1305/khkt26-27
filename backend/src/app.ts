@@ -6,7 +6,8 @@ import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { PrismaClient } from "@prisma/client";
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedis } from "./redis.js";
 import { z, ZodError } from "zod";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -42,6 +43,8 @@ import {
   matchesMime,
 } from "./storage.js";
 import { generateQuestions } from "./ai.js";
+import { generateOwnedQuiz } from "./quizGeneration.js";
+import { geminiRequestSchema } from "./geminiSchemas.js";
 import { realtime } from "./realtime.js";
 
 declare module "fastify" {
@@ -54,14 +57,12 @@ export async function buildApp(deps?: {
   redis?: Redis;
   logger?: boolean;
   storageHealth?: () => Promise<unknown>;
+  onStartupStep?: (step: string) => void;
 }) {
+  deps?.onStartupStep?.("1. Initializing DB client...");
   const db = deps?.db ?? new PrismaClient();
-  const redis =
-    deps?.redis ??
-    new Redis(config.REDIS_URL, {
-      maxRetriesPerRequest: 1,
-      connectTimeout: 3000,
-    });
+  deps?.onStartupStep?.("1.1. Initializing Redis client...");
+  const redis = deps?.redis ?? createRedis(config.REDIS_URL);
   const app = Fastify({
     logger: deps?.logger ?? {
       redact: ["req.headers.authorization", "req.body", "req.url"],
@@ -77,6 +78,29 @@ export async function buildApp(deps?: {
     requestTimeout: 120000,
     genReqId: () => randomUUID(),
   });
+  deps?.onStartupStep?.("2. Registering CORS plugin...");
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    credentials: true,
+    strictPreflight: false,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+    allowedHeaders: [
+      "Authorization",
+      "Content-Type",
+      "X-Requested-With",
+      "Accept",
+      "X-Request-ID",
+      "Idempotency-Key",
+    ],
+    exposedHeaders: [
+      "X-Request-ID",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+    ],
+  });
   const metrics = new Metrics();
   app.addHook("onResponse", async (req, reply) =>
     metrics.record(
@@ -87,12 +111,12 @@ export async function buildApp(deps?: {
     ),
   );
   app.decorateRequest("userId", "");
-  redis.on("error", (err) =>
-    app.log.error({ message: err.message }, "Redis unavailable"),
-  );
   app.addHook("onClose", async () => {
-    if (!deps?.db) await db.$disconnect();
-    if (!deps?.redis) redis.disconnect();
+    try {
+      if (!deps?.db) await db.$disconnect();
+    } finally {
+      if (!deps?.redis) redis.disconnect();
+    }
   });
   app.addHook("onRequest", async (req, reply) => {
     reply
@@ -106,25 +130,11 @@ export async function buildApp(deps?: {
       .header("X-XSS-Protection", "1; mode=block")
       .header("Content-Security-Policy", "default-src 'none'");
   });
-  await app.register(cors, {
-    origin: config.CORS_ORIGIN.split(",").map((v) => v.trim()),
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Authorization",
-      "Content-Type",
-      "X-Request-ID",
-      "Idempotency-Key",
-    ],
-    exposedHeaders: [
-      "X-Request-ID",
-      "X-RateLimit-Limit",
-      "X-RateLimit-Remaining",
-      "X-RateLimit-Reset",
-    ],
-  });
+  deps?.onStartupStep?.("2.1. Registering multipart plugin...");
   await app.register(multipart, {
     limits: { files: 1, fileSize: 20 * 1024 * 1024, fields: 1, parts: 2 },
   });
+  deps?.onStartupStep?.("2.2. Registering rate-limit plugin...");
   await app.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
@@ -137,6 +147,7 @@ export async function buildApp(deps?: {
       "retry-after": true,
     },
   });
+  deps?.onStartupStep?.("2.3. Registering WebSocket plugin...");
   await app.register(websocket, { options: { maxPayload: 4096 } });
   app.addHook("onSend", async (_req, reply, payload) => {
     const reset = Number(reply.getHeader("x-ratelimit-reset"));
@@ -204,6 +215,7 @@ export async function buildApp(deps?: {
         instance: req.url.split("?")[0],
       }),
   );
+  deps?.onStartupStep?.("2.4. Registering API routes...");
   const authenticate = async (req: FastifyRequest) => {
     req.userId = await verifyAccess(
       req.headers.authorization?.startsWith("Bearer ")
@@ -641,6 +653,16 @@ export async function buildApp(deps?: {
           return row;
         });
         return reply.code(201).send(answer);
+      });
+      api.post("/quiz/generate", {
+        bodyLimit: 256 * 1024,
+        config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      }, async (req, reply) => {
+        const body = geminiRequestSchema.parse(req.body);
+        const started = performance.now();
+        const questions = await generateOwnedQuiz(db, req.userId, body)
+          .finally(() => metrics.recordQuiz((performance.now() - started) / 1000));
+        return reply.code(201).send(questions);
       });
       api.post(
         "/quizzes/generate",

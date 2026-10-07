@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { request, post } from "./api";
 import type {
   Answer,
+  GenerateQuizResponse,
   ApiQuestion,
   ApiSession,
   SessionInput,
@@ -10,7 +11,8 @@ import type {
 import { useSetupStore } from "@/store/setupStore";
 let saving: Promise<ApiSession> | null = null;
 export async function uploadMaterials() {
-  for (const material of useSetupStore.getState().materials) {
+  const before = useSetupStore.getState();
+  for (const material of before.materials) {
     if (material.uploaded) continue;
     const form = new FormData();
     form.append("name", material.name);
@@ -28,7 +30,10 @@ export async function uploadMaterials() {
       method: "POST",
       body: form,
     });
-    useSetupStore.getState().updateMaterial(material.id, { uploaded });
+    const current = useSetupStore.getState();
+    if (current.ownerId !== before.ownerId || current.clientId !== before.clientId)
+      throw new Error("Phiên học đã thay đổi trong khi tải tài liệu.");
+    current.updateMaterial(material.id, { uploaded });
   }
 }
 export function saveSession() {
@@ -41,6 +46,8 @@ export function saveSession() {
       throw new Error("Chưa có phiên học. Vui lòng bắt đầu một phiên mới.");
     await uploadMaterials();
     const current = useSetupStore.getState();
+    if (current.clientId !== state.clientId || current.ownerId !== state.ownerId)
+      throw new Error("Phiên học đã thay đổi trong khi lưu.");
     const input: SessionInput = {
       client_id: current.clientId,
       goal_text: current.goalText.trim(),
@@ -66,7 +73,10 @@ export function saveSession() {
       ),
     };
     const session = await post<ApiSession>("/sessions", input);
-    current.setServerSessionId(session.id);
+    const latest = useSetupStore.getState();
+    if (latest.clientId !== state.clientId || latest.ownerId !== state.ownerId)
+      throw new Error("Phiên học đã thay đổi trong khi lưu.");
+    latest.setServerSessionId(session.id);
     return session;
   })().finally(() => {
     saving = null;
@@ -90,7 +100,10 @@ export async function loadQuiz(generate = false) {
         `/quizzes?topic_id=${encodeURIComponent(state.topicId)}&limit=3`,
       ).then((r) => r.questions);
   if (!result.length) throw new Error("Chủ đề chưa có câu hỏi.");
-  useSetupStore.getState().setQuizQuestions(result);
+  const current = useSetupStore.getState();
+  if (current.clientId !== state.clientId || current.ownerId !== state.ownerId)
+    throw new Error("Phiên học đã thay đổi trong khi tải quiz.");
+  current.setQuizQuestions(result);
 }
 export async function syncAnswers() {
   const session = await saveSession();
@@ -106,4 +119,32 @@ export async function syncAnswers() {
     useSetupStore.getState().markAnswerSynced(question_id);
   }
   return request<ApiSession>(`/sessions/${session.id}`);
+}
+
+let generatingGemini: Promise<void> | null = null;
+export function loadGeminiQuiz(): Promise<void> {
+  if (generatingGemini) return generatingGemini;
+  const before = useSetupStore.getState();
+  if (Object.keys(before.answers).length) return Promise.reject(new Error("Không thể đổi quiz sau khi đã trả lời."));
+  const text = before.documentText.trim();
+  if (text && (text.length < 10 || text.length > 50000))
+    return Promise.reject(new Error("Văn bản Gemini phải có 10–50.000 ký tự."));
+  generatingGemini = (async () => {
+    await saveSession();
+    const active = useSetupStore.getState();
+    if (active.clientId !== before.clientId || active.ownerId !== before.ownerId)
+      throw new Error("Phiên học đã thay đổi.");
+    const result = await post<GenerateQuizResponse>("/quiz/generate", {
+      topic: before.topicId, ...(text ? { documentText: text } : {}), count: 3,
+    });
+    const current = useSetupStore.getState();
+    if (current.clientId !== before.clientId || current.ownerId !== before.ownerId || Object.keys(current.answers).length)
+      throw new Error("Phiên học đã thay đổi. Không áp dụng bộ quiz cũ.");
+    if (!Array.isArray(result) || result.length !== 3 || result.some(q => q.options?.length !== 4))
+      throw new Error("Bộ quiz Gemini không hợp lệ.");
+    current.setQuizQuestions(result.map(q => ({
+      ...q, topic_id: before.topicId, correct_index: q.correctAnswerIndex,
+    })));
+  })().finally(() => { generatingGemini = null; });
+  return generatingGemini;
 }

@@ -17,6 +17,10 @@ Lệnh cuối tự chạy backend local và Expo ở chế độ **Expo Go / LAN
 
 Backend local dùng PostgreSQL PGlite lưu trên máy, Redis giả lập dành riêng phát triển và tài liệu lưu tại `backend/.local-data/` với URL ký. Không cần Docker/S3 để thử đăng ký, học, quiz, lịch sử và upload tài liệu. Không dùng chế độ này cho production; production dùng PostgreSQL/Redis/S3 thật theo phần dưới. Sinh quiz AI vẫn cần khóa OpenAI ở backend.
 
+PGlite mở cổng `127.0.0.1:15433`, database `postgres`. Khi dùng PGlite, đặt `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:15433/postgres?connection_limit=1&sslmode=disable` trong `backend/.env`; datasource trong `prisma/schema.prisma` vẫn dùng provider `postgresql`. Chạy backend bằng `npm --prefix backend run dev:local`.
+
+Để đồng bộ schema local, dừng `dev:local`, chạy `npm --prefix backend run db:local` ở một terminal; tại terminal khác chạy `cd backend && npx prisma db push`. Sau đó dừng `db:local` và chạy lại `dev:local`. Không chạy Prisma CLI đồng thời với API trên PGlite vì socket chia sẻ một connection và có thể trùng prepared statement. Metadata migration local nằm trong schema `local_runtime`, tách khỏi bảng ứng dụng ở `public`.
+
 Ứng dụng dùng SecureStore, Crypto, DocumentPicker, Haptics và AsyncStorage bundled của Expo SDK 57; **không cần development build cho các thay đổi này**. Expo Go trên điện thoại phải hỗ trợ SDK 57. Chặn app thật ở cấp hệ điều hành là tính năng khác, cần native module/development build và chưa được tích hợp.
 
 Không dùng bản web để xác nhận hành vi native. Export iOS/Android chỉ xác minh bundle, việc hoạt động trên điện thoại thật cần bạn quét QR và thử các bước.
@@ -66,7 +70,11 @@ npx expo start --go --lan
 - Android emulator: `http://10.0.2.2:3000/api/v1`.
 - Điện thoại thật: `http://<IP-LAN-của-máy>:3000/api/v1`, hai thiết bị cùng mạng.
 
-Nếu đọc tài liệu từ điện thoại, đổi `S3_PUBLIC_ENDPOINT` thành `http://<IP-LAN>:9000`. `S3_ENDPOINT` trong container vẫn là `http://minio:9000`; URL ký cho client dùng endpoint public. Đặt `CORS_ORIGIN` khớp origin web khi đổi cổng/host. Production dùng HTTPS cho API và storage.
+Web luôn dùng `http://localhost:3000/api/v1`, kể cả khi `EXPO_PUBLIC_API_URL` chứa IP LAN cũ. Native ưu tiên `EXPO_PUBLIC_API_URL`; URL chỉ có host/cổng sẽ tự thêm `/api/v1`. Khi biến này thiếu hoặc trống, dùng fallback `http://localhost:3000/api/v1`; không tự lấy IP Metro. Kiểm tra `.env.local` vì nó ưu tiên hơn `.env`. Sau khi đổi URL, reload toàn bộ app.
+
+Backend phải listen trên `HOST=0.0.0.0` để điện thoại truy cập qua LAN. CORS hiện đăng ký ngay sau khi khởi tạo Fastify, phản hồi mọi origin và cho phép credentials ở mọi môi trường theo cấu hình yêu cầu. `CORS_ORIGIN` hiện không được dùng. Preflight được plugin kết thúc với HTTP 204 trước các hook xác thực/rate limit; hỗ trợ `PATCH` và header `X-Requested-With`.
+
+Nếu đọc tài liệu từ điện thoại, đổi `S3_PUBLIC_ENDPOINT` thành `http://<IP-LAN>:9000`. `S3_ENDPOINT` trong container vẫn là `http://minio:9000`; URL ký cho client dùng endpoint public. Production dùng HTTPS cho API và storage.
 
 Tạo tài khoản email ở màn hình đăng nhập, nhập mục tiêu, chọn chủ đề, tài liệu và danh sách ứng dụng gây xao nhãng, đặt timer. Quiz lấy từ API khi timer hoàn thành; dừng sớm đi thẳng tới tổng kết. Tài liệu được tải trước khi bắt đầu timer. Có thể retry lưu sau lỗi mạng và tiếp tục draft sau khi đăng nhập lại cùng tài khoản. Refresh token lưu ở Keychain/Keystore; web dùng bộ nhớ nên cần đăng nhập lại khi reload.
 

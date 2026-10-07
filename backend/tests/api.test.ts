@@ -8,6 +8,7 @@ import type { Redis } from "ioredis";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/app.js";
 import { issueTokens, hashToken } from "../src/auth.js";
+import { config } from "../src/config.js";
 vi.mock("../src/storage.js", () => ({
   uploadFile: vi.fn().mockResolvedValue({}),
   deleteFile: vi.fn().mockResolvedValue({}),
@@ -31,6 +32,13 @@ vi.mock("../src/ai.js", () => ({
     },
   ]),
 }));
+vi.mock("../src/gemini.js", () => ({
+  generateGeminiQuiz: vi.fn().mockResolvedValue([{
+    id: "provider-label", question: "Gemini question", options: ["A", "B", "C", "D"],
+    correctAnswerIndex: 1, explanation: "Gemini explanation",
+  }]),
+}));
+import { generateGeminiQuiz } from "../src/gemini.js";
 const pg = new PGlite();
 const server = new PGLiteSocketServer({
   db: pg,
@@ -107,8 +115,99 @@ afterAll(async () => {
   await app?.close();
   await db.$disconnect();
   await server.stop();
+  // pglite-socket schedules socket detach on setImmediate; drain it before closing WASM.
+  await new Promise<void>((resolve) => setImmediate(resolve));
   await pg.close();
   redis.disconnect();
+});
+it.each(["http://localhost:8081", "http://192.168.1.182:8081"])(
+  "allows credentialed preflight and error responses from %s in development",
+  async (origin) => {
+    const previous = config.NODE_ENV;
+    let devApp: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      config.NODE_ENV = "development";
+      devApp = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
+      const preflight = await devApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/users/me",
+        headers: {
+          origin,
+          "access-control-request-method": "PUT",
+          "access-control-request-headers": "content-type,authorization,idempotency-key,x-request-id",
+        },
+      });
+      const loginPreflight = await devApp.inject({
+        method: "OPTIONS",
+        url: "/api/v1/auth/login",
+        headers: {
+          origin,
+          "access-control-request-method": "POST",
+          "access-control-request-headers": "content-type,authorization,x-requested-with,accept",
+        },
+      });
+      expect(loginPreflight.statusCode).toBe(204);
+      expect(loginPreflight.body).toBe("");
+      expect(loginPreflight.headers["access-control-allow-origin"]).toBe(origin);
+      expect(loginPreflight.headers["access-control-allow-credentials"]).toBe("true");
+      const allowedHeaders = String(loginPreflight.headers["access-control-allow-headers"])
+        .toLowerCase().split(",").map((header) => header.trim());
+      expect(allowedHeaders).toEqual(expect.arrayContaining([
+        "content-type", "authorization", "x-requested-with", "accept",
+      ]));
+      // strictPreflight=false also accepts OPTIONS without the usual preflight headers.
+      for (const requestHeaders of [{ origin }, {}]) {
+        const relaxedPreflight = await devApp.inject({
+          method: "OPTIONS", url: "/api/v1/auth/login", headers: requestHeaders,
+        });
+        expect(relaxedPreflight.statusCode).toBe(204);
+        expect(relaxedPreflight.body).toBe("");
+      }
+      const patchPreflight = await devApp.inject({
+        method: "OPTIONS", url: "/api/v1/users/me",
+        headers: { origin, "access-control-request-method": "PATCH" },
+      });
+      expect(patchPreflight.statusCode).toBe(204);
+      expect(patchPreflight.headers["access-control-allow-methods"]).toContain("PATCH");
+      expect(preflight.statusCode).toBe(204);
+      expect(preflight.headers["access-control-allow-origin"]).toBe(origin);
+      expect(preflight.headers["access-control-allow-credentials"]).toBe("true");
+      expect(preflight.headers["access-control-allow-methods"]).toBe("GET, POST, PUT, DELETE, OPTIONS, PATCH");
+      expect(String(preflight.headers["access-control-allow-headers"]).toLowerCase()).toContain("authorization");
+      const response = await devApp.inject({
+        method: "GET", url: "/api/v1/users/me", headers: { origin },
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.headers["access-control-allow-origin"]).toBe(origin);
+      expect(response.headers["access-control-allow-credentials"]).toBe("true");
+    } finally {
+      config.NODE_ENV = previous;
+      await devApp?.close();
+    }
+  },
+);
+it("reflects origins in production with the explicitly requested permissive CORS configuration", async () => {
+  const previous = config.NODE_ENV;
+  const origins = config.CORS_ORIGIN;
+  let productionApp: Awaited<ReturnType<typeof buildApp>> | undefined;
+  try {
+    config.NODE_ENV = "production";
+    config.CORS_ORIGIN = "https://app.example.com, https://admin.example.com";
+    productionApp = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
+    for (const origin of ["https://app.example.com", "https://admin.example.com", "http://192.168.1.182:8081"]) {
+      const response = await productionApp.inject({
+        method: "OPTIONS", url: "/api/v1/users/me",
+        headers: { origin, "access-control-request-method": "GET" },
+      });
+      expect(response.headers["access-control-allow-origin"]).toBe(
+        origin,
+      );
+    }
+  } finally {
+    config.NODE_ENV = previous;
+    config.CORS_ORIGIN = origins;
+    await productionApp?.close();
+  }
 });
 it("registers, logs in, rotates refresh tokens, rejects replay and revokes on logout", async () => {
   const payload = {
@@ -488,4 +587,45 @@ it("authenticates websocket events and tracks the focus lifecycle", async () => 
   } finally {
     ws.terminate();
   }
+});
+
+it("generates private Gemini questions with database UUIDs and grades them", async () => {
+  const generated = await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers,
+    payload: { topic: "biology", count: 1 } });
+  expect(generated.statusCode).toBe(201);
+  const questions = generated.json();
+  expect(Array.isArray(questions)).toBe(true);
+  expect(questions[0].id).not.toBe("provider-label");
+  expect(questions[0].correctAnswerIndex).toBe(1);
+  const row = await db.quizQuestion.findUniqueOrThrow({ where: { id: questions[0].id } });
+  expect(row.owner_id).toBe(userId);
+  expect(row.source).toBe("gemini_generated");
+  const saved = await app.inject({ method: "POST", url: "/api/v1/sessions", headers, payload: session() });
+  const answer = { session_id: saved.json().id, question_id: row.id, selected_index: 1 };
+  expect((await app.inject({ method: "POST", url: "/api/v1/quizzes/answer", headers, payload: answer })).json().is_correct).toBe(true);
+  const foreign = await app.inject({ method: "POST", url: "/api/v1/quizzes/answer", headers: stranger, payload: answer });
+  expect(foreign.statusCode).toBe(404);
+});
+it("rejects invalid Gemini requests before calling the provider", async () => {
+  vi.mocked(generateGeminiQuiz).mockClear();
+  for (const payload of [{ topic: "biology", count: 0 }, { topic: "biology", count: "3" }, { topic: "biology", questionCount: 3 }]) {
+    expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers, payload })).statusCode).toBe(400);
+  }
+  expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers, payload: { topic: "absent", count: 1 } })).statusCode).toBe(404);
+  expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", payload: { topic: "biology" } })).statusCode).toBe(401);
+  expect(generateGeminiQuiz).not.toHaveBeenCalled();
+});
+it("rolls back the entire Gemini quiz if a database insert fails", async () => {
+  const before = await db.quizQuestion.count({ where: { owner_id: userId } });
+  const valid = { id: "first", question: "Valid", options: ["A", "B", "C", "D"], correctAnswerIndex: 1, explanation: "Valid" };
+  // Fault injection bypasses the provider adapter to exercise the database constraint/transaction.
+  vi.mocked(generateGeminiQuiz).mockResolvedValueOnce([valid, { ...valid, id: "second", correctAnswerIndex: 9 }]);
+  const response = await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers,
+    payload: { topic: "biology", count: 2 } });
+  expect(response.statusCode).toBe(500);
+  // PGlite socket closes a failed transaction connection; verify rollback via its underlying DB.
+  const rows = await pg.query<{ count: number }>(
+    "SELECT COUNT(*)::int AS count FROM quiz_bank WHERE owner_id=$1", [userId],
+  );
+  expect(rows.rows[0].count).toBe(before);
 });

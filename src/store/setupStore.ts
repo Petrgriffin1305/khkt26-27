@@ -2,10 +2,12 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { DistractionEvent, RestrictedApp, StudyMaterial } from "@/types";
-import type { ApiQuestion } from "@/services/contracts";
+import type { ApiQuestion, ConfidenceRating } from "@/services/contracts";
 interface SetupStore {
   goalText: string;
   topicId: string;
+  documentText: string;
+  setDocumentText: (text: string) => void;
   materials: StudyMaterial[];
   restrictedApps: RestrictedApp[];
   targetDurationSeconds: number;
@@ -26,6 +28,10 @@ interface SetupStore {
   serverSessionId: string | null;
   quizQuestions: ApiQuestion[];
   answers: Record<string, number>;
+  draftOptions: Record<string, number>;
+  confidenceRatings: Record<string, ConfidenceRating>;
+  selectOption: (id: string, index: number) => void;
+  setConfidence: (id: string, rating: ConfidenceRating) => void;
   syncedAnswers: string[];
   setGoalText: (text: string) => void;
   setTopicId: (id: string) => void;
@@ -48,6 +54,7 @@ interface SetupStore {
 const initial = {
   goalText: "",
   topicId: "computer-science",
+  documentText: "",
   materials: [] as StudyMaterial[],
   restrictedApps: [] as RestrictedApp[],
   targetDurationSeconds: 1500,
@@ -64,6 +71,8 @@ const initial = {
   serverSessionId: null as string | null,
   quizQuestions: [] as ApiQuestion[],
   answers: {} as Record<string, number>,
+  draftOptions: {} as Record<string, number>,
+  confidenceRatings: {} as Record<string, ConfidenceRating>,
   syncedAnswers: [] as string[],
 };
 export const useSetupStore = create<SetupStore>()(
@@ -74,6 +83,7 @@ export const useSetupStore = create<SetupStore>()(
       setStage: (stage) => set({ stage }),
       setGoalText: (goalText) => set({ goalText }),
       setTopicId: (topicId) => set({ topicId }),
+      setDocumentText: (documentText) => set({ documentText }),
       addMaterials: (materials) =>
         set((state) => ({
           materials: [...state.materials, ...materials].slice(0, 4),
@@ -128,14 +138,22 @@ export const useSetupStore = create<SetupStore>()(
           serverSessionId: null,
           quizQuestions: [],
           answers: {},
+          draftOptions: {},
+          confidenceRatings: {},
           syncedAnswers: [],
         }),
       setServerSessionId: (serverSessionId) => set({ serverSessionId }),
-      setQuizQuestions: (quizQuestions) => set({ quizQuestions }),
+      setQuizQuestions: (quizQuestions) => set({ quizQuestions, draftOptions: {}, confidenceRatings: {} }),
+      selectOption: (id, index) => set(state => state.answers[id] !== undefined ? state : ({
+        draftOptions: { ...state.draftOptions, [id]: index },
+      })),
+      setConfidence: (id, rating) => set(state => state.answers[id] !== undefined ? state : ({
+        confidenceRatings: { ...state.confidenceRatings, [id]: rating },
+      })),
       answer: (id, index) =>
         set((state) => ({
           answers:
-            state.answers[id] === undefined
+            state.answers[id] === undefined && state.confidenceRatings[id] !== undefined
               ? { ...state.answers, [id]: index }
               : state.answers,
         })),
@@ -149,6 +167,8 @@ export const useSetupStore = create<SetupStore>()(
           materials: [],
           restrictedApps: [],
           answers: {},
+          draftOptions: {},
+          confidenceRatings: {},
           syncedAnswers: [],
           quizQuestions: [],
         }),
@@ -157,6 +177,13 @@ export const useSetupStore = create<SetupStore>()(
       name: "pomodoro.draft",
       storage: createJSONStorage(() => AsyncStorage),
       skipHydration: true,
+      version: 1,
+      migrate: (persisted) => ({
+        ...(persisted as Partial<SetupStore>),
+        documentText: (persisted as Partial<SetupStore>).documentText ?? "",
+        draftOptions: (persisted as Partial<SetupStore>).draftOptions ?? {},
+        confidenceRatings: (persisted as Partial<SetupStore>).confidenceRatings ?? {},
+      }) as SetupStore,
       partialize: (state) => ({
         ...state,
         materials: state.materials.map((material) => ({

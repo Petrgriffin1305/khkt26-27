@@ -1,0 +1,20 @@
+{
+  "name": "pomofocus-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test --test-isolation=none tests/*.test.cjs",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "electron": "^44.5.1",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
