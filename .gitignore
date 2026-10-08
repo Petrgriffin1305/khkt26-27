@@ -52,3 +52,9 @@ patches/
 
 # Desktop build outputs
 desktop/dist/
+
+desktop/web-dist/
+desktop/release/
+
+# Generated from the matching installed PDF.js package.
+public/pdf.worker.min.mjs

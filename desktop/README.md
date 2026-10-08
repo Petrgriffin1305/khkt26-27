@@ -1,3 +1,16 @@
+# Viễn Du Desktop
+
+Ứng dụng chính dùng chung web app 3D với bản trình duyệt. Xem [hướng dẫn web/Windows](../docs/WEB_DESKTOP.md).
+
+```bash
+npm run build:web
+npm --prefix desktop ci
+npm --prefix desktop start
+npm --prefix desktop run package:win
+```
+
+## Guard thử nghiệm cũ
+
 # PomoFocus Desktop MVP
 
 Package Electron riêng, không thuộc Expo bundle. Chạy trên Windows để đồng hồ Focus đóng các executable đã chọn; Linux/macOS vẫn chạy đồng hồ nhưng Guard trả `unsupported`.
@@ -6,7 +19,7 @@ Package Electron riêng, không thuộc Expo bundle. Chạy trên Windows để 
 npm --prefix desktop ci
 npm --prefix desktop run typecheck
 npm --prefix desktop test
-npm --prefix desktop start
+npm --prefix desktop run start:guard
 ```
 
 Đóng ứng dụng bằng `taskkill /F /IM` có thể mất dữ liệu chưa lưu. Giao diện bắt buộc xác nhận trước khi bắt đầu. Guard chỉ nhận discord.exe/chrome.exe/steam.exe, quét ngay và mỗi 3 giây; không ngăn khởi chạy tức thời, không tự nâng quyền admin. Một image name có thể gồm nhiều process. UI hiển thị lỗi nếu không quét/đóng được.

@@ -1,0 +1,1724 @@
+:root {
+  color-scheme: light;
+}
+.material-hint { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.material-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; overflow-wrap: anywhere; }
+.material-list li { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #d7e0d5; border-radius: 8px; }
+.material-list span { font-size: 12px; color: var(--muted); }
+.journey-view {
+  min-width: 0;
+}
+.camera-switch {
+  padding: 12px 16px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+.adventure .camera-switch button {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.adventure .overhead-map {
+  padding: 18px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 20px;
+}
+.overhead-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.overhead-toolbar small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 1.8px;
+}
+.adventure .overhead-toolbar h2 {
+  font-size: 20px;
+  margin: 3px 0;
+}
+.overhead-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.adventure .overhead-controls button {
+  padding: 6px 12px;
+}
+.overhead-controls span {
+  min-width: 40px;
+  font-size: 12px;
+  text-align: center;
+}
+.adventure .overhead-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 0 12px;
+}
+.overhead-viewport {
+  overflow: auto;
+  border-radius: 16px;
+  max-height: 620px;
+  scrollbar-color: #91ad8d #e6ebdb;
+  scrollbar-width: thin;
+}
+.overhead-world {
+  display: block;
+  height: auto;
+}
+.overhead-region {
+  fill: #66896e;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+.overhead-car {
+  cursor: pointer;
+}
+.overhead-car:hover rect:nth-last-of-type(2) {
+  filter: brightness(1.12);
+}
+.overhead-car:focus {
+  outline: none;
+}
+.overhead-car:focus rect:nth-last-of-type(2) {
+  stroke: #d67b49;
+  stroke-width: 5;
+}
+.overhead-status {
+  display: flex;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 14px 0;
+  font-size: 13px;
+}
+.overhead-status span {
+  color: var(--muted);
+}
+.overhead-carriages {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.adventure .overhead-carriages button {
+  padding: 7px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.adventure .overhead-carriages button[aria-pressed="true"] {
+  background: #edf3e4;
+  border-color: #81a38c;
+}
+.overhead-carriages i {
+  width: 18px;
+  height: 12px;
+  border-radius: 4px;
+}
+.adventure .overhead-selected {
+  font-size: 13px;
+  margin: 12px 0;
+}
+.overhead-selected span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.overhead-legend {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.duration-picker {
+  margin: 14px 0;
+  text-align: left;
+}
+.quick-times {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.adventure .quick-times button {
+  flex: 1;
+  padding: 9px 12px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.adventure .quick-times button.selected {
+  background: #eaf0e7;
+  border-color: #81a38c;
+}
+.adventure .custom-duration {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 4px;
+  font-size: 13px;
+}
+.custom-duration > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.adventure .custom-duration input {
+  width: 115px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: white;
+  color: var(--ink);
+}
+.duration-picker small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.adventure .duration-error {
+  font-size: 12px;
+  color: #a34837;
+  margin: 7px 0;
+}
+@media (max-width: 600px) {
+  .adventure .overhead-map {
+    padding: 12px;
+  }
+  .adventure .overhead-toolbar h2 {
+    font-size: 17px;
+  }
+  .overhead-controls {
+    width: 100%;
+  }
+  .overhead-viewport {
+    max-height: 410px;
+  }
+  .overhead-status {
+    gap: 5px 12px;
+  }
+}
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: #f6f6f1;
+}
+.adventure {
+  --ink: #273d35;
+  --muted: #788078;
+  --orange: #d67b49;
+  --green: #377566;
+  --border: #e3e6dd;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+  background: #f6f6f1;
+}
+.adventure * {
+  box-sizing: border-box;
+}
+.adventure button,
+.adventure input,
+.adventure textarea,
+.adventure select {
+  font: inherit;
+}
+.adventure button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 17px;
+  background: white;
+  color: var(--ink);
+  transition:
+    background 0.15s,
+    transform 0.15s;
+}
+.adventure button:hover:not(:disabled) {
+  background: #edf0e8;
+}
+.adventure button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.adventure button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.adventure :focus-visible {
+  outline: 3px solid #d88a54;
+  outline-offset: 4px;
+}
+.adventure h1,
+.adventure h2,
+.adventure h3,
+.adventure p {
+  margin: 0;
+}
+.adventure h1 {
+  font-size: clamp(28px, 2.7vw, 40px);
+  line-height: 1.24;
+  letter-spacing: -1.2px;
+  font-weight: 650;
+}
+.adventure h2 {
+  font-size: 23px;
+  line-height: 1.4;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.adventure h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.adventure p {
+  color: var(--muted);
+}
+.adventure small {
+  font-size: 12px;
+}
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 235px;
+  background: #203a31;
+  color: #eef3e9;
+  padding: 35px 21px;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #f2ecd9;
+  text-decoration: none;
+  font-size: 30px;
+  letter-spacing: -1px;
+  font-weight: 650;
+  padding: 0 12px;
+}
+.brand-icon {
+  color: #ecb97e;
+  font-size: 40px;
+  line-height: 1;
+}
+.brand small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2px;
+  margin-top: 0;
+  color: #afc0b1;
+}
+.nav-heading {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #8ca697;
+  margin: 52px 13px 17px;
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.adventure button.nav {
+  border: 0;
+  background: transparent;
+  color: #b7c8bd;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px;
+  font-size: 13px;
+}
+.nav > span {
+  font-size: 24px;
+  line-height: 1;
+  min-width: 23px;
+  text-align: center;
+}
+.adventure button.nav.active {
+  background: #355346;
+  color: #fff;
+}
+.nav i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e8b17d;
+  margin-left: auto;
+}
+.sidebar-bottom {
+  margin-top: auto;
+  padding-top: 50px;
+}
+.little-ticket {
+  padding: 17px 13px;
+  border: 1px solid #486050;
+  border-radius: 10px;
+  background: #294236;
+}
+.little-ticket > span {
+  color: #e5c898;
+  font-size: 12px;
+}
+.little-ticket p {
+  font-size: 11px;
+  color: #a9bcae;
+  margin-top: 8px;
+  line-height: 1.8;
+}
+.adventure .account {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #e0e8de;
+  padding: 22px 0 0;
+  text-align: left;
+  font-size: 12px;
+}
+.account > span:last-child {
+  margin-left: auto;
+  color: #8aa18f;
+}
+.account small {
+  display: block;
+  color: #8aa18f;
+  font-size: 10px;
+}
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 35px;
+  height: 35px;
+  flex-shrink: 0;
+  border-radius: 50% !important;
+  background: #e5dfc9 !important;
+  color: #4e604b !important;
+  padding: 0 !important;
+  font-size: 13px;
+  font-weight: 650;
+}
+.main-area {
+  margin-left: 235px;
+}
+.topbar {
+  height: 83px;
+  padding: 0 45px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+.topbar strong {
+  font-weight: 500;
+  color: #526053;
+}
+.slash {
+  margin: 0 13px;
+  color: #bdc3b9;
+}
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 23px;
+}
+.connection {
+  color: #637e6d;
+  font-size: 11px;
+}
+.connection.offline {
+  color: #9e693f;
+}
+.adventure main {
+  max-width: 1350px;
+  margin: auto;
+  padding: 36px 45px 20px;
+}
+.page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 29px;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.7px;
+  font-weight: 650;
+  color: #77907c;
+  margin-bottom: 12px;
+}
+.page-heading p {
+  font-size: 13px;
+  margin-top: 13px;
+  max-width: 660px;
+}
+.orange {
+  color: var(--orange);
+}
+.date-chip {
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 13px;
+  white-space: nowrap;
+  background: #fff;
+  margin-top: 20px;
+  color: #74806f;
+}
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.68fr) minmax(290px, 1fr);
+  gap: 24px;
+}
+.hero-card {
+  border-radius: 17px;
+  border: 1px solid #d7e0d5;
+  overflow: hidden;
+  background: #eef2e8;
+  position: relative;
+}
+.hero-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  padding: 20px 23px 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pill {
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  border: 1px solid #d4ddd0;
+  background: #fafbf5cf;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: #527260;
+  font-weight: 650;
+}
+.chapter {
+  font-size: 10px;
+  color: #7d9886;
+  letter-spacing: 1px;
+}
+.train-scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.hero-card > .train-scene {
+  border-radius: 0;
+  margin-top: 10px;
+  min-height: 250px;
+  object-fit: cover;
+}
+.hero-caption {
+  display: flex;
+  padding: 14px 26px 15px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.hero-caption .eyebrow {
+  font-size: 9px;
+  margin-bottom: 4px;
+}
+.hero-caption h2 {
+  font-size: 24px;
+}
+.hero-caption p {
+  font-size: 11px;
+  max-width: 355px;
+  margin-top: 7px;
+}
+.adventure .round-button {
+  border-radius: 50%;
+  padding: 0;
+  width: 39px;
+  height: 39px;
+  background: #fff9;
+  flex-shrink: 0;
+}
+.journey-progress {
+  padding: 0 26px 23px;
+}
+.journey-progress > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #6e8170;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+.journey-progress strong {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.adventure progress {
+  height: 5px;
+  width: 100%;
+  border: 0;
+  background: #dfe5d7;
+  border-radius: 5px;
+  display: block;
+  overflow: hidden;
+}
+.adventure progress::-webkit-progress-bar {
+  background: #dce4d5;
+}
+.adventure progress::-webkit-progress-value {
+  background: #739273;
+}
+.adventure progress::-moz-progress-bar {
+  background: #739273;
+}
+.ticket-card {
+  background: #fffdf7;
+  border: 1px solid #e6e3d8;
+  border-radius: 16px;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ticket-card .eyebrow {
+  color: #af8c66;
+  font-size: 9px;
+  margin-bottom: 0;
+}
+.ticket-card h2 {
+  font-size: 25px;
+  line-height: 1.35;
+}
+.ticket-card > p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.ticket-divider {
+  border-bottom: 1px dashed #ded9ca;
+  margin: 3px -26px;
+}
+.field-label {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: #8c8e7f;
+}
+.adventure textarea,
+.adventure input:not([type="radio"]),
+.adventure select {
+  width: 100%;
+  border: 1px solid #e0e3d9;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  padding: 12px 13px;
+  min-height: 45px;
+}
+.adventure textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+.adventure textarea::placeholder,
+.adventure input::placeholder {
+  color: #9d9f91;
+  font-size: 12px;
+}
+.ticket-card textarea {
+  background: #f8f7f0;
+  border: 1px solid #eeeadf;
+  font-size: 12px;
+  min-height: 73px;
+}
+.quick-duration {
+  display: flex;
+  gap: 8px;
+}
+.adventure .quick-duration button {
+  flex: 1;
+  font-size: 10px;
+  padding: 8px 2px;
+  border-radius: 7px;
+  background: transparent;
+}
+.adventure button.selected {
+  color: #356e5e;
+  background: #eaf0e7;
+  border-color: #86a28a;
+}
+.adventure .primary {
+  background: #d67b49;
+  border-color: #d67b49;
+  color: #fffdf4;
+  padding: 13px 20px;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.adventure .primary:hover:not(:disabled) {
+  background: #c46b3b;
+}
+.ticket-card .primary {
+  width: 100%;
+  justify-content: space-between;
+  margin-top: auto;
+}
+.ticket-footnote {
+  font-size: 9px !important;
+  text-align: center;
+  color: #9b9b89;
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 23px 0 31px;
+}
+.stat {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 21px;
+  border-radius: 12px;
+}
+.stat-icon {
+  font-size: 24px;
+  color: #83967d;
+  background: #f2f5ec;
+  width: 40px;
+  height: 42px;
+  text-align: center;
+  border-radius: 8px;
+  padding-top: 2px;
+}
+.stat small {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #7f877a;
+}
+.stat strong {
+  display: block;
+  font-size: 29px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.stat p {
+  font-size: 10px;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.section-heading h2 {
+  font-size: 19px;
+}
+.section-heading > span {
+  font-size: 10px;
+  color: #8e9588;
+}
+.feature-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.adventure .feature {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 15px;
+  padding: 20px;
+  background: transparent;
+}
+.feature-icon {
+  width: 45px;
+  height: 45px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.peach {
+  background: #f2e9dc;
+  color: #b17e51;
+}
+.green {
+  background: #e7eee1;
+  color: #7d966a;
+}
+.feature h3 {
+  font-size: 12px;
+}
+.feature p {
+  font-size: 10px;
+  margin-top: 5px;
+}
+.feature > span:last-child {
+  margin-left: auto;
+  color: #a7b09f;
+}
+.page-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 32px 0 4px;
+  margin-top: 22px;
+  border-top: 1px solid var(--border);
+  font-size: 9px;
+  color: #949b8b;
+}
+.page-footer > span:first-child {
+  letter-spacing: 1.3px;
+}
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin: 24px 0;
+}
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: #fff;
+  padding: 27px;
+  margin-bottom: 22px;
+}
+.panel h2 {
+  margin-bottom: 12px;
+}
+.panel h3 {
+  margin-top: 16px;
+  margin-bottom: 10px;
+}
+.panel p {
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+.form label {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.form > h2,
+.form > p {
+  margin-bottom: 0;
+}
+.form small {
+  color: var(--muted);
+}
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 20px;
+}
+.choice-row button {
+  font-size: 12px;
+}
+.info-box {
+  background: #f1f4ec;
+  border: 1px solid #e0e8d8;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.info-box p:last-child {
+  margin-bottom: 0;
+}
+.info-box p {
+  font-size: 12px;
+  margin-top: 8px;
+}
+.info-box h3 {
+  margin: 0;
+}
+.focus-heading {
+  text-align: center;
+  margin: 15px auto 25px;
+}
+.focus-heading h1 {
+  font-size: 30px;
+  margin: 15px 0;
+}
+.focus-heading p {
+  font-size: 13px;
+}
+.focus-card {
+  max-width: 850px;
+  margin: 0 auto;
+  background: #eef2e8;
+  border-radius: 20px;
+  overflow: hidden;
+  padding-top: 30px;
+  border: 1px solid #dce3d6;
+}
+.timer {
+  font-size: clamp(70px, 8vw, 105px);
+  letter-spacing: -5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  font-weight: 400;
+  line-height: 1.2;
+}
+.timer-label {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-align: center;
+  color: #7d927d;
+  margin: 12px;
+}
+.focus-controls {
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.classify {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.classify p {
+  font-size: 12px;
+  text-align: center;
+  width: 100%;
+  margin-top: 10px;
+}
+.study-notes {
+  max-width: 850px;
+  margin: 24px auto;
+}
+.study-notes pre {
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 14px;
+}
+.adventure details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.station-list {
+  margin-top: 25px;
+}
+.station-stop {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 25px 22px;
+  border-bottom: 1px solid var(--border);
+  color: #939c90;
+}
+.station-stop.unlocked {
+  color: var(--ink);
+}
+.station-number {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.unlocked .station-number {
+  background: #e3ecdd;
+  color: #648259;
+}
+.station-stop small {
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.station-stop h2 {
+  font-size: 20px;
+  margin: 5px 0;
+}
+.station-stop p {
+  font-size: 12px;
+}
+.station-stop strong {
+  font-size: 12px;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.muted {
+  font-size: 12px;
+  margin-top: 20px !important;
+}
+.swatches {
+  display: flex;
+  gap: 15px;
+}
+.adventure .swatches button {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: 3px solid white;
+  box-shadow: 0 0 0 1px #ddd;
+  color: #fff;
+  padding: 0;
+}
+.souvenirs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+.souvenirs > div {
+  flex: 1;
+  min-width: 110px;
+  text-align: center;
+  background: #f8f7ef;
+  padding: 18px 10px;
+  font-size: 35px;
+  border-radius: 12px;
+}
+.souvenirs h3 {
+  font-size: 12px;
+}
+.souvenirs p {
+  font-size: 10px;
+}
+.group-cars {
+  display: flex;
+  overflow: auto;
+  gap: 16px;
+  margin-top: 26px;
+}
+.member {
+  min-width: 170px;
+  text-align: center;
+  flex: 1;
+}
+.mini-car {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 85px;
+  height: 64px;
+  color: white;
+  font-size: 50px;
+  border-radius: 12px;
+  margin: 0 auto;
+  border-bottom: 8px solid #354b42;
+}
+.member button {
+  font-size: 10px;
+}
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 25px 0;
+}
+.adventure .session-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+  padding: 22px;
+}
+.session-row h3 {
+  font-size: 15px;
+}
+.session-row p {
+  font-size: 11px;
+  margin-top: 5px;
+}
+.session-row strong {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.empty {
+  text-align: center;
+  padding: 50px 30px;
+}
+.empty-icon {
+  font-size: 50px;
+  color: #7f9675;
+}
+.empty p {
+  max-width: 540px;
+  margin: 15px auto 25px;
+}
+.auth-form {
+  max-width: 510px;
+}
+.message,
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 17px;
+  background: #edf3e7;
+  border: 1px solid #d5e3c9;
+  border-radius: 9px;
+  font-size: 12px;
+  margin-bottom: 18px;
+}
+.message.error {
+  background: #fbefe6;
+  border-color: #edd0bd;
+  color: #8c472e;
+}
+.message button {
+  padding: 0 8px;
+  background: transparent;
+  border: 0;
+  font-size: 20px;
+}
+.sync-banner {
+  background: #f7efdb;
+  border-color: #e9dfc4;
+}
+.sync-banner button {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+.active-trip {
+  position: fixed;
+  bottom: 24px;
+  right: 30px;
+  background: #294f41 !important;
+  color: white !important;
+  box-shadow: 0 6px 25px #1b352b30;
+  z-index: 7;
+  font-size: 12px !important;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #18332890;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  padding: 20px;
+}
+.modal {
+  max-width: 470px;
+  box-shadow: 0 15px 60px #17372840;
+}
+.modal .choice-row {
+  margin-bottom: 0;
+}
+.adventure .danger-button {
+  color: #a2523a;
+}
+.quiz fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin: 22px 0;
+}
+.quiz legend {
+  font-weight: 600;
+  padding: 0 8px;
+  font-size: 14px;
+}
+.answer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.answer.correct {
+  background: #e9f0df;
+  border-color: #8fa87b;
+}
+.file-label input {
+  font-size: 12px;
+}
+.compact {
+  max-height: 230px;
+}
+@media (min-width: 1600px) {
+  .adventure main {
+    padding-top: 45px;
+  }
+  .hero-card > .train-scene {
+    min-height: 290px;
+  }
+  .ticket-card {
+    gap: 19px;
+  }
+}
+@media (max-width: 1150px) {
+  .sidebar {
+    width: 205px;
+    padding: 30px 15px;
+  }
+  .main-area {
+    margin-left: 205px;
+  }
+  .adventure main {
+    padding: 28px;
+  }
+  .topbar {
+    padding: 0 28px;
+  }
+  .dashboard-grid {
+    gap: 18px;
+    grid-template-columns: 1.4fr 1fr;
+  }
+  .hero-card > .train-scene {
+    min-height: 245px;
+  }
+  .ticket-card {
+    padding: 21px;
+  }
+  .ticket-card h2 {
+    font-size: 22px;
+  }
+  .ticket-divider {
+    margin-left: -21px;
+    margin-right: -21px;
+  }
+  .stat {
+    padding: 16px;
+    gap: 11px;
+  }
+  .stat strong {
+    font-size: 25px;
+  }
+  .stat-icon {
+    display: none;
+  }
+  .date-chip {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .sidebar {
+    width: 79px;
+    padding: 28px 12px;
+  }
+  .brand {
+    padding: 0;
+    justify-content: center;
+  }
+  .brand > span:last-child,
+  .nav-heading,
+  .sidebar-bottom {
+    display: none;
+  }
+  .sidebar nav {
+    margin-top: 42px;
+  }
+  .adventure button.nav {
+    font-size: 0;
+    justify-content: center;
+    padding: 14px 0;
+    gap: 0;
+  }
+  .nav i {
+    display: none;
+  }
+  .main-area {
+    margin-left: 79px;
+  }
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page-heading h1 {
+    font-size: 30px;
+  }
+  .topbar {
+    height: 68px;
+  }
+  .hero-caption {
+    padding: 15px 20px;
+  }
+  .hero-caption p {
+    font-size: 10px;
+  }
+  .two-columns {
+    gap: 18px;
+  }
+  .panel {
+    padding: 22px;
+  }
+  .station-stop strong {
+    display: none;
+  }
+}
+@media (max-width: 740px) {
+  .adventure main {
+    padding: 23px 20px;
+  }
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero-card > .train-scene {
+    min-height: 0;
+  }
+  .ticket-card {
+    gap: 17px;
+  }
+  .ticket-card h2 br {
+    display: none;
+  }
+  .stat-row {
+    gap: 10px;
+  }
+  .stat {
+    padding: 14px;
+  }
+  .stat small {
+    font-size: 8px;
+  }
+  .stat strong {
+    font-size: 23px;
+  }
+  .stat p {
+    font-size: 9px;
+  }
+  .feature-row,
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+  .feature-row {
+    gap: 12px;
+  }
+  .feature h3 {
+    font-size: 13px;
+  }
+  .feature p {
+    font-size: 11px;
+  }
+  .page-heading {
+    margin-bottom: 24px;
+  }
+  .page-heading h1 {
+    font-size: 29px;
+  }
+  .page-heading p {
+    font-size: 12px;
+  }
+  .topbar {
+    padding: 0 20px;
+  }
+  .topbar > span {
+    font-size: 10px;
+  }
+  .top-actions {
+    gap: 12px;
+  }
+  .connection {
+    font-size: 0;
+  }
+  .connection:first-letter {
+    font-size: 13px;
+  }
+  .page-footer {
+    gap: 20px;
+    font-size: 8px;
+  }
+  .section-heading > span {
+    display: none;
+  }
+  .group-cars .member {
+    max-width: 210px;
+  }
+  .station-stop {
+    gap: 16px;
+    padding: 20px 0;
+  }
+  .station-stop h2 {
+    font-size: 18px;
+  }
+  .session-row {
+    gap: 12px !important;
+    padding: 16px !important;
+  }
+  .session-row .feature-icon {
+    display: none;
+  }
+  .session-row p {
+    font-size: 10px;
+  }
+  .timer {
+    font-size: 80px;
+  }
+  .focus-controls {
+    padding: 20px;
+  }
+  .timer-label {
+    font-size: 8px;
+  }
+  .focus-heading h1 {
+    font-size: 24px;
+  }
+}
+@media (max-width: 480px) {
+  .sidebar {
+    inset: auto 0 0;
+    width: 100%;
+    height: 66px;
+    padding: 4px 8px;
+    background: #203a31;
+  }
+  .brand {
+    display: none;
+  }
+  .sidebar nav {
+    flex-direction: row;
+    margin: 0;
+    justify-content: space-around;
+  }
+  .adventure button.nav {
+    padding: 12px 16px;
+  }
+  .nav > span {
+    font-size: 25px;
+  }
+  .main-area {
+    margin-left: 0;
+  }
+  .topbar {
+    height: 59px;
+  }
+  .adventure main {
+    padding: 22px 17px 90px;
+  }
+  .page-heading h1 {
+    font-size: 30px;
+  }
+  .page-heading .eyebrow {
+    font-size: 8px;
+  }
+  .stat-row {
+    gap: 8px;
+  }
+  .stat {
+    padding: 11px 8px;
+  }
+  .stat small {
+    font-size: 7px;
+    letter-spacing: 0.5px;
+  }
+  .stat strong {
+    font-size: 21px;
+  }
+  .stat p {
+    font-size: 8px;
+  }
+  .page-footer {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .active-trip {
+    bottom: 78px;
+    right: 15px;
+  }
+  .hero-label {
+    padding: 15px 17px 0;
+  }
+  .hero-caption h2 {
+    font-size: 22px;
+  }
+  .hero-caption p {
+    font-size: 10px;
+  }
+  .classify {
+    flex-direction: column;
+  }
+  .classify button {
+    width: 100%;
+  }
+  .session-row h3 {
+    font-size: 13px;
+  }
+  .session-row strong {
+    font-size: 10px;
+  }
+  .focus-heading h1 {
+    font-size: 23px;
+  }
+  .modal {
+    padding: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adventure * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* Cartoon motion uses only transform/opacity; canvas owns the 3D world. */
+.scene-3d {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #d7eced, #bde0d4);
+  aspect-ratio: 1.95;
+  min-height: 220px;
+}
+.train-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    transparent 50%,
+    #6b977518 100%
+  );
+}
+.adventure button.scene-motion {
+  position: absolute;
+  bottom: 13px;
+  right: 14px;
+  border: 1px solid #ffffff70;
+  background: #fff9;
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 5px 10px;
+  color: #466457;
+  opacity: 0.55;
+}
+.adventure button.scene-motion:hover,
+.adventure button.scene-motion:focus-visible {
+  opacity: 1;
+  background: #fff;
+}
+.scene-fog-label {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 20px;
+  border-radius: 20px;
+  background: #f8fbf3c9;
+  color: #537264;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+}
+.exploration-fog {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 60%, transparent var(--reveal-radius), #e5eeead1 calc(var(--reveal-radius) + 20%), #dbe7e3f7 100%);
+}
+.scene-exploration-label {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  right: 12px;
+  color: #39594a;
+  font-size: 12px;
+  text-align: center;
+}
+.hero-card > .scene-3d {
+  border-radius: 0;
+  margin-top: 0;
+  min-height: 270px;
+}
+.hero-label {
+  pointer-events: none;
+}
+.focus-card > .scene-3d {
+  border-radius: 0;
+  aspect-ratio: 2.7;
+  min-height: 240px;
+}
+.view-entrance {
+  animation: arrive-at-station 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.adventure .primary {
+  box-shadow: 0 4px 0 #b9633325;
+  transition:
+    transform 0.25s cubic-bezier(0.2, 1.8, 0.5, 1),
+    box-shadow 0.25s,
+    background 0.2s;
+}
+.adventure .primary:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 7px 0 #b9633325;
+}
+.adventure .primary:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 1px 0 #b9633325;
+}
+.adventure .feature,
+.stat,
+.member,
+.station-stop {
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1.4, 0.4, 1),
+    box-shadow 0.3s;
+}
+.adventure .feature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 22px #253b3208;
+}
+.swatches button {
+  transition: transform 0.3s cubic-bezier(0.2, 1.8, 0.5, 1) !important;
+}
+.swatches button[aria-pressed="true"] {
+  transform: scale(1.15);
+}
+.stat-icon,
+.feature-icon {
+  box-shadow:
+    inset 0 2px 0 #ffffff8c,
+    inset 0 -3px 0 #46603808;
+}
+.brand-icon {
+  display: inline-block;
+  transform: rotate(-5deg);
+}
+.brand:hover .brand-icon {
+  animation: brand-wiggle 0.6s ease;
+}
+.station-stop.unlocked .station-number {
+  box-shadow: 0 3px 0 #73896d20;
+}
+.modal {
+  animation: ticket-pop 0.3s cubic-bezier(0.16, 1.3, 0.4, 1) both;
+}
+.modal-backdrop {
+  backdrop-filter: blur(5px);
+}
+.adventure .progress {
+  transition: width 0.6s ease;
+}
+@keyframes arrive-at-station {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes ticket-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes brand-wiggle {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  40% {
+    transform: rotate(7deg);
+  }
+  70% {
+    transform: rotate(-9deg);
+  }
+}
+@media (max-width: 740px) {
+  .hero-card > .scene-3d {
+    min-height: 240px;
+  }
+  .scene-3d {
+    aspect-ratio: 1.75;
+  }
+  .focus-card > .scene-3d {
+    aspect-ratio: 1.8;
+    min-height: 220px;
+  }
+  .scene-motion span {
+    display: none;
+  }
+  .hero-caption {
+    padding-top: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-entrance,
+  .modal,
+  .brand-icon {
+    animation: none;
+  }
+  .adventure button:hover,
+  .adventure button:active,
+  .adventure .feature:hover {
+    transform: none;
+  }
+  .scene-motion {
+    display: none !important;
+  }
+}
+/* Expo's native ScrollView reset disables document scrolling. This DOM shell
+   uses the document as its scrolling surface on web and desktop. */
+body {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+.travel-scene { overflow: hidden; border-radius: 20px; background: #f4f6eb; text-align: left; }
+.travel-toolbar, .travel-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 16px; font-size: 12px; color: #617565; }
+.travel-world { display: block; width: 100%; height: auto; min-height: 190px; }
+.travel-landscape { animation: travel-landscape 55s linear infinite; }
+.travel-track { animation: travel-track 1.6s linear infinite; }
+.travel-scene[data-moving="false"] .travel-landscape, .travel-scene[data-moving="false"] .travel-track { animation-play-state: paused; }
+.travel-fog { transition: opacity 1s linear; }
+.travel-caption { background: #eef2e5; }
+@keyframes travel-landscape { to { transform: translateX(-900px); } }
+@keyframes travel-track { to { transform: translateX(-30px); } }
+@media (prefers-reduced-motion: reduce) {
+  .travel-landscape, .travel-track { animation: none; }
+  .travel-fog { transition: none; }
+}

@@ -1,20 +1,47 @@
 {
   "name": "pomofocus-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "main": "dist/main.js",
+  "main": "dist/adventureMain.js",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test --test-isolation=none tests/*.test.cjs",
-    "start": "npm run build && electron ."
+    "start": "npm run build && npm run prepare:web && electron .",
+    "prepare:web": "node prepare-web.cjs",
+    "package:win": "npm run build && npm run prepare:web && electron-builder --win nsis --x64",
+    "start:guard": "npm run build && electron dist/main.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "electron": "^44.5.1",
+    "electron-builder": "26.15.3",
     "typescript": "~6.0.3"
   },
   "engines": {
     "node": ">=22.13"
+  },
+  "description": "Vi\u1ec5n Du \u2014 Focus and learning adventure",
+  "author": "Vien Du",
+  "build": {
+    "appId": "com.viendu.study",
+    "productName": "Vien Du",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "web-dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Vien-Du-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
   }
 }

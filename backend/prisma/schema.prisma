@@ -105,3 +105,10 @@ model Document {
   @@index([user_id])
   @@map("documents")
 }
+
+// Transactional MVP aggregate; lock row 1 for membership and ledger updates.
+model AdventureState {
+  id Int @id
+  state Json
+  @@map("adventure_state")
+}

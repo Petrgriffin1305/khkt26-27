@@ -77,6 +77,7 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await pg.exec(readFileSync(new URL("../prisma/migrations/20261007000000_adventure/migration.sql", import.meta.url), "utf8"));
   await server.start();
   app = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
   await app.ready();
@@ -110,6 +111,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await redis.flushall();
+  await db.$executeRaw`UPDATE adventure_state SET state = '{"people":{},"groups":{},"sessions":{},"invites":{}}'::jsonb WHERE id = 1`;
 });
 afterAll(async () => {
   await app?.close();
@@ -614,6 +616,183 @@ it("rejects invalid Gemini requests before calling the provider", async () => {
   expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers, payload: { topic: "absent", count: 1 } })).statusCode).toBe(404);
   expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", payload: { topic: "biology" } })).statusCode).toBe(401);
   expect(generateGeminiQuiz).not.toHaveBeenCalled();
+});
+it("adventure requires auth, prevents duplicate credit, hides private sessions, and keeps invitations revocable", async () => {
+  expect(
+    (await app.inject({ method: "GET", url: "/api/v1/adventure" })).statusCode,
+  ).toBe(401);
+  const make = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/groups",
+    headers,
+    payload: { name: "Morning train", timezone: "Asia/Ho_Chi_Minh" },
+  });
+  expect(make.statusCode).toBe(200);
+  const groupId = make.json().group.id;
+  const invite = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/invite",
+    headers,
+  });
+  const joined = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/join",
+    headers: stranger,
+    payload: { token: invite.json().token },
+  });
+  expect(joined.json().group.members).toHaveLength(2);
+  const at = Date.now(),
+    payload = {
+      id: randomUUID(),
+      groupId: null,
+      goal: "Private lesson",
+      topic: "biology",
+      started: at - 60000,
+      ended: at,
+      target: 60,
+      segments: [{ start: at - 60000, end: at, kind: "focus" }],
+    };
+  const first = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/sessions",
+    headers,
+    payload,
+  });
+  expect(first.statusCode).toBe(200);
+  const retry = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/sessions",
+    headers,
+    payload,
+  });
+  expect(retry.json().person.seconds).toBe(60);
+  const other = await app.inject({
+    method: "GET",
+    url: "/api/v1/adventure",
+    headers: stranger,
+  });
+  expect(other.json().sessions).toHaveLength(0);
+  expect(JSON.stringify(other.json())).not.toContain("Private lesson");
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/adventure/invite",
+        headers: stranger,
+      })
+    ).statusCode,
+  ).toBe(403);
+  const left = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/leave",
+    headers,
+  });
+  expect(left.json().person.seconds).toBe(60);
+  const state = await app.inject({
+    method: "GET",
+    url: "/api/v1/adventure",
+    headers: stranger,
+  });
+  expect(state.json().group.id).toBe(groupId);
+  expect(state.json().group.owner).not.toBe(userId);
+  const revoked = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/join",
+    headers,
+    payload: { token: invite.json().token },
+  });
+  expect(revoked.statusCode).toBe(400);
+});
+
+it("serializes concurrent invitations without exceeding six members", async () => {
+  await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/groups",
+    headers,
+    payload: { name: "Capacity test", timezone: "UTC" },
+  });
+  const invite = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/invite",
+    headers,
+  });
+  const candidates = [];
+  for (let i = 0; i < 6; i++) {
+    const candidate = await db.user.create({
+      data: {
+        email: `capacity-${randomUUID()}@example.com`,
+        name: "Candidate",
+      },
+    });
+    candidates.push({
+      authorization: `Bearer ${(await issueTokens(db, candidate)).access_token}`,
+    });
+  }
+  const results = await Promise.all(
+    candidates.map((h) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/adventure/join",
+        headers: h,
+        payload: { token: invite.json().token },
+      }),
+    ),
+  );
+  expect(results.filter((r) => r.statusCode === 200)).toHaveLength(5);
+  expect(results.filter((r) => r.statusCode === 400)).toHaveLength(1);
+  const state = await app.inject({
+    method: "GET",
+    url: "/api/v1/adventure",
+    headers,
+  });
+  expect(state.json().group.members).toHaveLength(6);
+});
+it("grades adventure quiz once and protects another learner's session", async () => {
+  const at = Date.now(),
+    id = randomUUID();
+  const payload = {
+    id,
+    groupId: null,
+    goal: "Quiz study",
+    topic: "biology",
+    started: at - 60000,
+    ended: at,
+    target: 60,
+    segments: [{ start: at - 60000, end: at, kind: "focus" }],
+  };
+  const saves = await Promise.all(
+    [1, 2].map(() =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/adventure/sessions",
+        headers,
+        payload,
+      }),
+    ),
+  );
+  expect(saves.every((r) => r.statusCode === 200)).toBe(true);
+  const result = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/quiz",
+    headers,
+    payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] },
+  });
+  expect(result.json().sessions[0].quiz).toEqual({ score: 1, total: 1 });
+  const retry = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/quiz",
+    headers,
+    payload: { sessionId: id, answers: [{ id: questionId, selected: 0 }] },
+  });
+  expect(retry.json().sessions[0].quiz).toEqual({ score: 1, total: 1 });
+  expect(retry.json().person.seconds).toBe(60);
+  const other = await app.inject({
+    method: "POST",
+    url: "/api/v1/adventure/quiz",
+    headers: stranger,
+    payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] },
+  });
+  expect(other.statusCode).toBe(404);
 });
 it("rolls back the entire Gemini quiz if a database insert fails", async () => {
   const before = await db.quizQuestion.count({ where: { owner_id: userId } });

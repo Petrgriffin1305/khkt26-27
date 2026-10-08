@@ -1,3 +1,4 @@
+import { adventureRoutes } from "./adventure/routes.js";
 import { localRead, verifyLocalUrl } from "./localStorage.js";
 import { Metrics } from "./metrics.js";
 import Fastify, { type FastifyRequest } from "fastify";
@@ -234,6 +235,7 @@ export async function buildApp(deps?: {
         "Account no longer exists",
       );
   };
+  adventureRoutes(app, db, authenticate);
   const authLimits = { rateLimit: { max: 10, timeWindow: "1 minute" } };
   if (config.STORAGE_DRIVER === "local")
     app.get("/files/:id", async (req, reply) => {

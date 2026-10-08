@@ -12,9 +12,10 @@ test('normalizes LAN and HTTPS endpoints without duplicating the API prefix', ()
   assert.equal(resolveApiUrl(' http://192.168.1.182:3000/// '), 'http://192.168.1.182:3000/api/v1');
   assert.equal(resolveApiUrl('https://api.example.com/api/v1/'), 'https://api.example.com/api/v1');
 });
-test('web always uses localhost even when env contains the old LAN endpoint', () => {
-  assert.equal(resolveApiUrl('http://192.168.1.182:3000/api/v1', 'web'), 'http://localhost:3000/api/v1');
-  assert.equal(resolveApiUrl('https://api.example.com', 'web'), 'http://localhost:3000/api/v1');
+test('web uses the configured deployment endpoint', () => {
+  assert.equal(resolveApiUrl('http://192.168.1.182:3000/api/v1', 'web'), 'http://192.168.1.182:3000/api/v1');
+  assert.equal(resolveApiUrl('https://api.example.com', 'web'), 'https://api.example.com/api/v1');
+  assert.throws(() => resolveApiUrl('ftp://api.example.com', 'web'));
 });
 test('missing or blank env always falls back to localhost', () => {
   assert.equal(resolveApiUrl(' ', 'android'), 'http://localhost:3000/api/v1');

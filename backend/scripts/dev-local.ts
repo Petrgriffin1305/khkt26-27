@@ -37,7 +37,7 @@ async function start() {
       END $$;
       CREATE TABLE IF NOT EXISTS local_runtime.local_migrations (name TEXT PRIMARY KEY)`,
     );
-    const migration = "20261004000000_initial";
+    for (const migration of ["20261004000000_initial", "20261007000000_adventure"]) {
     const applied = await pg.query(
       "SELECT name FROM local_runtime.local_migrations WHERE name=$1",
       [migration],
@@ -47,6 +47,7 @@ async function start() {
         await readFile(`prisma/migrations/${migration}/migration.sql`, "utf8"),
       );
       await pg.query("INSERT INTO local_runtime.local_migrations(name) VALUES ($1)", [migration]);
+    }
     }
     const socket = new PGLiteSocketServer({
       db: pg,

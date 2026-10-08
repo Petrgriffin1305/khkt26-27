@@ -1,7 +1,6 @@
-// Web luôn dùng backend localhost; native dùng env hoặc fallback localhost.
-export function resolveApiUrl(fromEnv?: string, platform?: string): string {
+// Dùng cùng endpoint đã cấu hình trên web và native; localhost chỉ để phát triển.
+export function resolveApiUrl(fromEnv?: string, _platform?: string): string {
   const localhost = "http://localhost:3000/api/v1";
-  if (platform === "web") return localhost;
   const configured = fromEnv?.trim().replace(/\/+$/, "");
   if (configured) {
     const url = new URL(configured);

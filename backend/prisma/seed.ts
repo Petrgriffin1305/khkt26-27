@@ -1,12 +1,11 @@
+import { studyTopics } from "../src/adventure/topics.js";
+import { extraQuizBank } from "./extraQuizBank.js";
 import { PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 const db = new PrismaClient();
-const topics = [
-  { id: "computer-science", name: "Tin học", icon: "💻" },
-  { id: "biology", name: "Sinh học", icon: "🧬" },
-  { id: "mathematics", name: "Toán học", icon: "📐" },
-];
+const topics = studyTopics;
 const bank: Record<string, [string, string[], number, string][]> = {
+  ...extraQuizBank,
   "computer-science": [
     [
       "Độ phức tạp của tìm kiếm nhị phân là gì?",
@@ -87,7 +86,7 @@ try {
     });
     for (const [question, options, correct_index, explanation] of bank[
       topic.id
-    ]) {
+    ] ?? []) {
       if (
         !(await db.quizQuestion.findFirst({
           where: { topic_id: topic.id, question, source: "static" },

@@ -12,6 +12,8 @@ import { useSetupStore } from "./setupStore";
 interface AuthStore {
   user: User | null;
   ready: boolean;
+  offline?: boolean;
+  needsLogin: boolean;
   error: string | null;
   bootstrap: () => Promise<void>;
   login: (email: string, password: string, name?: string) => Promise<void>;
@@ -20,6 +22,7 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   ready: false,
+  needsLogin: false,
   error: null,
   bootstrap: async () => {
     try {
