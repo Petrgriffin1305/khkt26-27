@@ -46,6 +46,8 @@ import {
 } from "./storage.js";
 import { generateQuestions } from "./ai.js";
 import { generateOwnedQuiz } from "./quizGeneration.js";
+import { materialReadRequestSchema, MATERIAL_READ_BODY_LIMIT_BYTES } from "./materialReadingSchemas.js";
+import { readMaterialDocument } from "./materialReading.js";
 import { geminiRequestSchema } from "./geminiSchemas.js";
 import { realtime } from "./realtime.js";
 
@@ -658,6 +660,18 @@ export async function buildApp(deps?: {
           return row;
         });
         return reply.code(201).send(answer);
+      });
+      api.post("/materials/read", {
+        bodyLimit: MATERIAL_READ_BODY_LIMIT_BYTES,
+        config: { rateLimit: { max: 3, timeWindow: "1 minute" } },
+      }, async (req, reply) => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        const closed = () => { if (!reply.raw.writableEnded) abort(); };
+        req.raw.once("aborted", abort);
+        reply.raw.once("close", closed);
+        try { return await readMaterialDocument(materialReadRequestSchema.parse(req.body), controller.signal); }
+        finally { req.raw.off("aborted", abort); reply.raw.off("close", closed); }
       });
       api.post("/quiz/generate", {
         bodyLimit: 256 * 1024,

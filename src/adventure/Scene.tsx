@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SceneFallback } from "./SceneFallback";
 import type { SceneController, SceneOptions } from "./scene3d";
 export function Scene({
@@ -10,9 +10,9 @@ export function Scene({
   branch = "mountain",
   calm = false,
   running = true,
+  exploration = 0,
   fogStrength = fog ? 1 : 0,
-  revealRadius,
-}: Partial<SceneOptions> & { compact?: boolean; running?: boolean; revealRadius?: number }) {
+}: Partial<SceneOptions> & { compact?: boolean; running?: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const controller = useRef<SceneController | null>(null);
   const [available, setAvailable] = useState(true);
@@ -39,7 +39,7 @@ export function Scene({
     };
   }, []);
   useEffect(() => {
-    const options = { color, fog, fogStrength, decor, station, branch, calm, moving: running };
+    const options = { color, fog, fogStrength, decor, station, branch, calm, moving: running, exploration };
     // The controller may still be loading. Apply the latest props once ready.
     let disposed = false,
       handle = 0;
@@ -53,7 +53,7 @@ export function Scene({
       disposed = true;
       cancelAnimationFrame(handle);
     };
-  }, [color, fog, fogStrength, decor, station, branch, calm, running, available]);
+  }, [color, fog, fogStrength, decor, station, branch, calm, running, exploration, available]);
   return (
     <div
       className={`scene-3d ${compact ? "compact" : ""} ${fog || fogStrength > .01 ? "is-foggy" : ""}`}
@@ -68,11 +68,6 @@ export function Scene({
       ) : (
         <SceneFallback color={color} fog={fog || fogStrength > .01} fogStrength={fogStrength} decor={decor} />
       )}
-      <div className="scene-vignette" aria-hidden="true" />
-      {revealRadius !== undefined && <div className="exploration-fog" aria-hidden="true"
-        style={{ "--reveal-radius": `${revealRadius}%` } as CSSProperties} />}
-      {revealRadius !== undefined && !fog && fogStrength <= .01 &&
-        <div className="scene-exploration-label">☁ Mỗi phút học mở thêm một vùng đất</div>}
       {(fog || fogStrength > .01) && (
         <div className="scene-fog-label">{fog ? "☁ Toa đang chờ bạn quay lại" : "☁ Sương đang tan khi bạn nối lại"}</div>
       )}

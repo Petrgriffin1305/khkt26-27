@@ -163,6 +163,34 @@ test('parses DOCX through the browser OfficeParser bundle without Node Buffer or
   assert.match(result.text, /Word attachment knowledge phrase/);
 });
 
+test('returns OCR provenance, confidence, and an explicit review requirement', async () => {
+  const previousWorker = globalThis.Worker;
+  const fixture = await readFile(new URL('./fixtures/high-contrast-vietnamese-english.png', import.meta.url));
+  globalThis.Worker = class TestOcrWorker {
+    listeners = new Map();
+    addEventListener(type, listener) { this.listeners.set(type, listener); }
+    removeEventListener(type) { this.listeners.delete(type); }
+    postMessage(request) {
+      queueMicrotask(() => this.listeners.get('message')?.({ data: {
+        type: 'result', id: request.id, text: 'term\nnghĩa tiếng Việt', confidence: 31,
+      } }));
+    }
+    terminate() {}
+  };
+
+  try {
+    const result = await extractMaterialFile(file('notes.png', fixture, 'image/png'));
+    assert.equal(result.status, 'extracted');
+    assert.equal(result.text, 'term\nnghĩa tiếng Việt');
+    assert.equal(result.source, 'local-ocr');
+    assert.equal(result.quality, 'needs-review');
+    assert.equal(result.confidence, 31);
+  } finally {
+    if (previousWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = previousWorker;
+  }
+});
+
 test('extracts PDF text with the local PDF.js worker', async (t) => {
   let canvas;
   try {
@@ -212,6 +240,7 @@ test('extracts legacy XLS files with bounded sheet output', async () => {
 });
 
 test('preserves metadata and returns a clear status for unsupported, oversized, or empty input', async () => {
+  assert.equal(MAX_FILE_BYTES, 32 * 1024 * 1024);
   const unsupported = await extractMaterialFile(file('scan.gif', new Uint8Array([0x47, 0x49, 0x46, 0x38])));
   assert.equal(unsupported.status, 'metadata-only');
   assert.equal(unsupported.name, 'scan.gif');
@@ -226,6 +255,18 @@ test('preserves metadata and returns a clear status for unsupported, oversized, 
   const tooLarge = await extractMaterialFile({ name: 'large.txt', size: MAX_FILE_BYTES + 1, type: 'text/plain', arrayBuffer: async () => new ArrayBuffer(0) });
   assert.equal(tooLarge.status, 'too-large');
   assert.equal(tooLarge.text, '');
+  assert.match(tooLarge.message, /32 MB/iu);
+
+  let acceptedLargePdfRead = false;
+  const largerScan = await extractMaterialFile({
+    name: 'Vocabulary.pdf',
+    size: 21_278_187,
+    type: 'application/pdf',
+    async arrayBuffer() { acceptedLargePdfRead = true; return new ArrayBuffer(0); },
+  });
+  assert.equal(acceptedLargePdfRead, true, 'a 21.3 MB scan should pass the file-size gate');
+  assert.equal(largerScan.status, 'empty');
+  assert.match(largerScan.message, /không tìm thấy văn bản/iu);
 
   const empty = await extractMaterialFile(file('blank.txt', new Uint8Array()));
   assert.equal(empty.status, 'empty');

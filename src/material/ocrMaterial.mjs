@@ -1,5 +1,5 @@
 export const MAX_DECODED_IMAGE_PIXELS = 20_000_000;
-export const MAX_PDF_PAGES = 100;
+export const MAX_PDF_PAGES = 20;
 export const MAX_OCR_PAGES_PER_FILE = 20;
 export const MAX_OCR_TIME_MS = 120_000;
 export const MIN_USEFUL_PDF_TEXT_CHARS = 50;
@@ -248,8 +248,15 @@ export function createOcrClient({
     if (!Number.isInteger(message.id) || !pending.has(message.id)) return;
     const request = pending.get(message.id);
     pending.delete(message.id);
-    if (message.type === 'result') request.resolve(String(message.text || ''));
-    else request.reject(new Error(String(message.message || 'Local OCR could not read this page.')));
+    if (message.type === 'result') {
+      const confidence = message.confidence;
+      request.resolve({
+        text: String(message.text || ''),
+        ...(typeof confidence === 'number' && Number.isFinite(confidence)
+          ? { confidence: Math.max(0, Math.min(100, confidence)) }
+          : {}),
+      });
+    } else request.reject(new Error(String(message.message || 'Local OCR could not read this page.')));
   };
 
   const onError = (event) => {
@@ -291,12 +298,50 @@ export function createOcrClient({
 }
 
 function safeText(value) {
-  // eslint-disable-next-line no-control-regex
-  return String(value ?? '').replace(/\u0000/g, '').replace(/[\t\r\n ]+/gu, ' ').trim();
+  // OCR line breaks are meaningful for paired vocabulary and must survive extraction.
+  return String(value ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[\t ]+/gu, ' ')
+    .replace(/[ ]*\n[ ]*/gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
+}
+
+function recognitionFrom(value) {
+  const text = safeText(typeof value === 'string' ? value : value?.text);
+  const rawConfidence = typeof value === 'object' && value !== null ? value.confidence : undefined;
+  const confidence = typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+    ? Math.max(0, Math.min(100, rawConfidence))
+    : undefined;
+  return { text, confidence };
 }
 
 function pageTextFromItems(items) {
-  return safeText((items || []).map((item) => item?.str || '').join(' '));
+  const lines = [];
+  let line = '';
+  let previousY;
+  const finishLine = () => {
+    const normalized = line.trim();
+    if (normalized) lines.push(normalized);
+    line = '';
+  };
+
+  for (const item of items || []) {
+    const text = safeText(item?.str).replace(/\n/gu, ' ').trim();
+    if (!text) continue;
+    const y = Number(item?.transform?.[5]);
+    if (line && Number.isFinite(y) && Number.isFinite(previousY) && Math.abs(y - previousY) > 1) {
+      finishLine();
+    }
+    if (line && !line.endsWith(' ')) line += ' ';
+    line += text;
+    if (item?.hasEOL) finishLine();
+    if (Number.isFinite(y)) previousY = y;
+  }
+  finishLine();
+  return lines.join('\n');
 }
 
 function makePdfPageText(pageNumber, text) {
@@ -348,6 +393,9 @@ export async function extractPdfPagesWithOcr(pdf, {
   let ocrClient = null;
   let ocrStopped = false;
   let ocrPages = 0;
+  let hasEmbeddedText = false;
+  let hasOcrText = false;
+  const confidences = [];
   const deadline = Date.now() + Math.max(1, readBudgetMs);
 
   const readTimeout = () => Math.max(1, Math.min(pageReadTimeoutMs, deadline - Date.now()));
@@ -404,6 +452,7 @@ export async function extractPdfPagesWithOcr(pdf, {
           throw error;
         }
         const selectableText = pageTextFromItems(content?.items);
+        if (selectableText) hasEmbeddedText = true;
         let recognizedText = '';
         const shouldOcr = selectableText.length < MIN_USEFUL_PDF_TEXT_CHARS;
         if (shouldOcr && !ocrStopped && ocrPages < MAX_OCR_PAGES_PER_FILE && requested > output.length) {
@@ -412,7 +461,12 @@ export async function extractPdfPagesWithOcr(pdf, {
             notify(onProgress, { phase: 'rendering', progress: 0, page: pageNumber, totalPages });
             const rendered = await renderPage(page, { page: pageNumber, totalPages, signal });
             throwIfAborted(signal);
-            recognizedText = safeText(await ocrClient.recognize(rendered, { page: pageNumber, totalPages }));
+            const recognition = recognitionFrom(await ocrClient.recognize(rendered, { page: pageNumber, totalPages }));
+            recognizedText = recognition.text;
+            if (recognizedText) {
+              hasOcrText = true;
+              if (Number.isFinite(recognition.confidence)) confidences.push(recognition.confidence);
+            }
             ocrPages += 1;
           } catch (error) {
             if (error?.name === 'AbortError' || signal?.aborted) throw abortError();
@@ -448,9 +502,22 @@ export async function extractPdfPagesWithOcr(pdf, {
     ocrClient?.terminate();
   }
 
+  const confidence = confidences.length
+    ? Math.round(confidences.reduce((sum, value) => sum + value, 0) / confidences.length)
+    : undefined;
+  const source = hasEmbeddedText && hasOcrText
+    ? 'mixed'
+    : hasOcrText
+      ? 'local-ocr'
+      : hasEmbeddedText
+        ? 'embedded-text'
+        : undefined;
   return {
     text: output,
     truncated,
+    ...(source ? { source } : {}),
+    ...(hasOcrText ? { quality: 'needs-review' } : {}),
+    ...(Number.isFinite(confidence) ? { confidence } : {}),
     ...(reason ? { reason, message: messageForLimit(reason) } : {}),
   };
 }
@@ -473,9 +540,15 @@ export async function extractImageWithOcr(bytes, {
     client = createClient();
     notify(onProgress, { phase: 'recognizing', progress: 0, page: 1, totalPages: 1 });
     const image = new Blob([bytes], { type: info.mime });
-    const text = safeText(await client.recognize(image, { page: 1, totalPages: 1 }));
+    const recognition = recognitionFrom(await client.recognize(image, { page: 1, totalPages: 1 }));
+    const { text } = recognition;
     throwIfAborted(signal);
-    return { text, truncated: false };
+    return {
+      text,
+      truncated: false,
+      ...(text ? { source: 'local-ocr', quality: 'needs-review' } : {}),
+      ...(Number.isFinite(recognition.confidence) ? { confidence: Math.round(recognition.confidence) } : {}),
+    };
   } catch (error) {
     if (error?.name === 'AbortError' || signal?.aborted) throw abortError();
     if (error?.name === 'OcrTimeoutError') {

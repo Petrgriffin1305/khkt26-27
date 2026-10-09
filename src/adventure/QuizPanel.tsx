@@ -161,7 +161,7 @@ export function QuizPanel({
         </div>
       ) : (
         <>
-          <p>Quiz do AI tạo dựa trên chủ đề, mục tiêu và ghi chú bạn đã nhập.</p>
+          <p>Câu hỏi dùng nguồn tài liệu đã kiểm tra. Khi không có tệp, AI dùng chủ đề, mục tiêu và ghi chú của chuyến.</p>
           {canUseAI ? (
             <>
               <label className="quiz-count-label">

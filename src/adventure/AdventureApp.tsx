@@ -7,6 +7,7 @@ import { JourneyView } from "./JourneyView";
 import { detectDeviceCategory } from "./device";
 import { explorationProgress } from "./exploration";
 import type { MaterialExtractionProgress } from "./materialExtraction";
+import { createMaterialSource, reviewMaterialSource, quizSourceText, recoveredMaterialSource, type MaterialSource } from "./materialSources";
 import { DurationPicker } from "./DurationPicker";
 import { ExperimentResults } from "./ExperimentResults";
 import { QuizPanel } from "./QuizPanel";
@@ -14,6 +15,8 @@ import { permanentGuestFailure, publishGuestSessions, type GuestPublicationStatu
 import { GuestHistorySync } from "./GuestHistorySync";
 import { studyTopics } from "./topics";
 import {
+  breakStatus,
+  totalDuration,
   depart,
   elapsedSeconds,
   focused,
@@ -24,6 +27,7 @@ import {
   tick,
   type ActiveTrip,
 } from "./focus";
+import { isValidBreakPlan } from "../../backend/src/adventure/domain";
 import { emptySaved, readSaved, writeSaved, type Saved } from "./storage";
 import { updateQuizDrafts, type QuizDraft, type QuizQuestion } from "./quizDrafts";
 import { analyzeSession, knowledgeGaps, reviewPlan } from "./learning";
@@ -75,7 +79,7 @@ const date = (time: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-type MaterialInfo = { name: string; size: number; type: string; status: string; message: string };
+type MaterialInfo = { sourceId?: string; name: string; size: number; type: string; status: string; message: string };
 export default function AdventureApp() {
   const { user, bootstrap, ready } = useAuthStore();
   useEffect(() => {
@@ -108,12 +112,19 @@ function AdventureWorkspace() {
   const [goal, setGoal] = useState(""),
     [topic, setTopic] = useState("biology"),
     [documentText, setDocumentText] = useState("");
+  const [sources, setSources] = useState<MaterialSource[]>([]);
+  const originalFiles = useRef(new Map<string, File>());
+  const [handwritten, setHandwritten] = useState(false);
   const [materials, setMaterials] = useState<MaterialInfo[]>([]);
   const [materialProgress, setMaterialProgress] = useState<(MaterialExtractionProgress & { file: string }) | null>(null);
   const materialRequest = useRef<AbortController | null>(null);
   useEffect(() => () => { materialRequest.current?.abort(); }, [view]);
+  const [breakCount, setBreakCount] = useState(0);
+  const [breakMinutes, setBreakMinutes] = useState(5);
   const [minutes, setMinutes] = useState(25),
     [mode, setMode] = useState<"solo" | "group">("solo");
+  const plannedBreaks = {count:breakCount,seconds:breakMinutes * 60};
+  const validBreaks = breakCount === 0 || isValidBreakPlan(plannedBreaks, minutes * 60);
   const [carriageName, setCarriageName] = useState(""),
     [groupName, setGroupName] = useState(""),
     [invite, setInvite] = useState("");
@@ -413,6 +424,7 @@ function AdventureWorkspace() {
     ? tick(saved.active, Math.max(now, saved.active.lastAt))
     : null;
   // Group contributions need server confirmation of membership and the daily cap.
+  const rest = active ? breakStatus(active, now) : null;
   const mapActive = active && !(mode === "group" && group) && active.groupId === null ? active : null;
   const mapProgress = explorationProgress(journey, mapActive ? focused(mapActive) : 0, mapActive?.target);
   const sessions = [...saved.pending, ...(data?.sessions ?? [])];
@@ -447,7 +459,7 @@ function AdventureWorkspace() {
       goal.trim().length < 3 ||
       minutes < 1 ||
       minutes > 240 ||
-      !Number.isInteger(minutes)
+      !Number.isInteger(minutes) || !validBreaks
     )
       return;
     const at = Date.now();
@@ -458,7 +470,9 @@ function AdventureWorkspace() {
       topic,
       document: documentText,
       materials,
+      sources,
       target: minutes * 60,
+      breakPlan: breakCount > 0 ? plannedBreaks : undefined,
       deviceCategory: detectDeviceCategory(navigator.userAgent, navigator.maxTouchPoints),
       groupId: mode === "group" && group ? group.id : null,
       started: at,
@@ -486,6 +500,7 @@ function AdventureWorkspace() {
       started: next.started,
       ended: sessionEndAt(trip, at),
       target: next.target,
+      breakPlan: next.breakPlan,
       segments: next.segments,
       seconds: focused(next),
       contribution: 0,
@@ -497,6 +512,7 @@ function AdventureWorkspace() {
     value.active = null;
     value.notes[s.id] = next.document;
     (value.materials ??= {})[s.id] = next.materials ?? [];
+    (value.sources ??= {})[s.id] = next.sources ?? [];
     value.summarySessionId = s.id;
     if (owner === "guest") {
       try {
@@ -560,26 +576,33 @@ function AdventureWorkspace() {
     try {
       const { extractMaterialFile } = await import("./materialExtraction");
       if (!isCurrent()) return;
-      let text = documentText;
+      let used = sources.reduce((total, source) => total + source.text.length + source.name.length + 12, 0);
+      const importedSources: MaterialSource[] = [];
+      const originals = new Map<string, File>();
       const imported: MaterialInfo[] = [];
       for (const file of files) {
         if (!isCurrent()) return;
         setMaterialProgress({ file: file.name, phase: "loading", progress: 0 });
-        const header = `\n\n--- ${file.name} ---\n`;
-        const remaining = Math.max(0, 50000 - text.length - header.length);
-        const result = await extractMaterialFile(file, {
+        const remaining = Math.max(0, 50000 - used - file.name.length - 12);
+        const result = handwritten && file.size <= 32 * 1024 * 1024 && /\.(pdf|png|jpe?g|webp)$/i.test(file.name)
+          ? {name:file.name,size:file.size,type:file.type,text:"",status:"empty",message:"Chữ viết tay: chọn Đọc bằng AI hoặc nhập bản chép rồi xác nhận.",source:"local-ocr",quality:"needs-review"}
+          : await extractMaterialFile(file, {
           maxTextChars: remaining,
           signal: controller.signal,
           onProgress: (progress) => { if (isCurrent()) setMaterialProgress({ file: file.name, ...progress }); },
         });
         if (!isCurrent()) return;
         const { name, size, type, status, message } = result;
-        imported.push({ name, size, type, status, message });
-        if (result.text) text += header + result.text;
+        const source = createMaterialSource(crypto.randomUUID(), result);
+        imported.push({ sourceId:source.id, name, size, type, status, message });
+        importedSources.push(source);
+        originals.set(source.id, file);
+        used += result.text.length + file.name.length + 12;
       }
-      setDocumentText(text);
+      for (const [sourceId, file] of originals) originalFiles.current.set(sourceId, file);
+      setSources((current) => [...current, ...importedSources]);
       setMaterials((current) => [...current, ...imported]);
-      setNotice("Đã kiểm tra tài liệu trên thiết bị. Chỉ nội dung trong ô ghi chú được gửi khi bạn chọn tạo quiz AI.");
+      setNotice("Đã giữ nguồn tài liệu riêng với ghi chú. Kiểm tra kết quả đọc trước khi tạo câu hỏi.");
     } catch (e) {
       if (isCurrent()) setError(e instanceof Error ? e.message : "Không đọc được tài liệu.");
     } finally {
@@ -591,6 +614,36 @@ function AdventureWorkspace() {
         }
       }
     }
+  }
+  async function readHandwriting(sourceId: string) {
+    if (busy || materialRequest.current || view !== "ticket") return;
+    if (!user || needsLogin) { setError("Đăng nhập để đọc chữ viết tay bằng AI."); return; }
+    const file = originalFiles.current.get(sourceId);
+    if (!file || file.size > 32 * 1024 * 1024) { setError("Hãy nhập lại tệp gốc, tối đa 32 MiB."); return; }
+    const id = ownerRef.current;
+    const controller = new AbortController();
+    materialRequest.current = controller;
+    const isCurrent = () => workspaceLive.current && ownerRef.current === id && materialRequest.current === controller && !controller.signal.aborted;
+    setBusy(true); setError(""); setMaterialProgress({file:file.name,phase:"recognizing",progress:0});
+    try {
+      const data = await new Promise<string>((resolve,reject) => {
+        const reader = new FileReader();
+        const abort = () => { reader.abort(); reject(new Error("Đã hủy đọc tài liệu.")); };
+        controller.signal.addEventListener("abort",abort,{once:true});
+        reader.onload = () => { controller.signal.removeEventListener("abort",abort); resolve(String(reader.result).split(",")[1] ?? ""); };
+        reader.onerror = () => { controller.signal.removeEventListener("abort",abort); reject(new Error("Không đọc được tệp gốc.")); };
+        reader.readAsDataURL(file);
+      });
+      if (!isCurrent()) return;
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      const mimeType = extension === "pdf" ? "application/pdf" : extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
+      const result = await request<{text:string;message?:string}>("/materials/read", {method:"POST",body:JSON.stringify({mimeType,data}),signal:controller.signal});
+      if (!isCurrent()) return;
+      setSources((items) => items.map((source) => source.id === sourceId ? {...source,text:result.text,source:"ai-vision",requiresReview:true,reviewed:false} : source));
+      setMaterials((items) => items.map((item) => item.sourceId === sourceId ? {...item,status:result.text ? "extracted" : "empty",message:result.message ?? "AI đã đọc. Hãy kiểm tra từ vựng, nghĩa và các chỗ [không rõ]."} : item));
+      setNotice("AI đã đọc tệp gốc. Kiểm tra và sửa nội dung trước khi xác nhận làm nguồn câu hỏi.");
+    } catch(e) { if (isCurrent()) setError(e instanceof Error ? e.message : "Không đọc được chữ viết tay."); }
+    finally { if (materialRequest.current === controller) { materialRequest.current = null; if(workspaceLive.current && ownerRef.current === id) {setBusy(false);setMaterialProgress(null);} } }
   }
   function exportRawData() {
     try {
@@ -621,11 +674,13 @@ function AdventureWorkspace() {
       throw new Error("Chuyến đã đổi trước khi quiz được tạo.");
     if (current.current.snapshot?.sessions.find((item) => item.id === session.id)?.quiz)
       throw new Error("Chuyến này đã có điểm. Hãy mở một chuyến ôn tập mới để làm thêm câu hỏi.");
-    const text = current.current.notes[session.id]?.trim();
+    const text = quizSourceText(current.current.notes[session.id] ?? "",
+      current.current.sources?.[session.id] ?? [], current.current.materials?.[session.id] ?? []);
     const result = await post<QuizQuestion[]>("/quiz/generate", {
       topic: session.topic,
       goal: session.goal,
       count,
+      documentAttached: Boolean(current.current.materials?.[session.id]?.length),
       ...(text && text.length >= 10 && text.length <= 50000 ? { documentText: text } : {}),
     });
     if (ownerRef.current !== id || !workspaceLive.current ||
@@ -669,7 +724,11 @@ function AdventureWorkspace() {
     setTopic(plan.topic);
     setDocumentText(plan.documentText);
     setMaterials(plan.materials);
+    const restoredSources = current.current.sources?.[session.id] ?? [];
+    setSources(structuredClone(restoredSources.length ? restoredSources : plan.materials.length ? [recoveredMaterialSource(plan.documentText,plan.materials)] : []));
     setMinutes(plan.minutes);
+    setBreakCount(0);
+    setBreakMinutes(5);
     setMode(session.groupId && group && session.groupId === group.id ? "group" : "solo");
     go("ticket");
   }
@@ -901,7 +960,7 @@ function AdventureWorkspace() {
                         placeholder="Ví dụ: Hiểu chương 2 môn Sinh học…"
                         rows={3}
                       />
-                      <DurationPicker value={minutes} onChange={setMinutes} />
+                      <DurationPicker value={minutes} onChange={setMinutes} breakCount={breakCount} breakMinutes={breakMinutes} onBreakCountChange={setBreakCount} onBreakMinutesChange={setBreakMinutes} />
                       <button
                         className="primary"
                         onClick={() => go(active ? "focus" : "ticket")}
@@ -991,9 +1050,9 @@ function AdventureWorkspace() {
                           ))}
                         </select>
                       </label>
-                      <DurationPicker value={minutes} onChange={setMinutes} />
+                      <DurationPicker value={minutes} onChange={setMinutes} breakCount={breakCount} breakMinutes={breakMinutes} onBreakCountChange={setBreakCount} onBreakMinutesChange={setBreakMinutes} />
                       <label>
-                        Tài liệu / ghi chú riêng
+                        Ghi chú riêng (độc lập với tệp)
                         <textarea
                           rows={5}
                           maxLength={50000}
@@ -1003,6 +1062,7 @@ function AdventureWorkspace() {
                           placeholder="Dán nội dung bài học. Chỉ gửi tới dịch vụ AI khi bạn chọn tạo quiz."
                         />
                       </label>
+                      <label className="handwriting-option"><input type="checkbox" checked={handwritten} disabled={busy} onChange={(e) => setHandwritten(e.target.checked)} /> Tài liệu viết tay · đọc bằng AI hoặc tự chép</label>
                       <label className="file-label">
                         Nhập tài liệu · mọi loại tệp
                         <input
@@ -1016,7 +1076,7 @@ function AdventureWorkspace() {
                           }}
                         />
                       </label>
-                      <p className="material-hint">Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), PDF, OpenDocument và văn bản. OCR đọc tiếng Việt và tiếng Anh từ PDF quét, ảnh PNG/JPG/WebP/BMP ngay trên thiết bị. Tối đa 20 MB/tệp, 10 tệp/chuyến, 50.000 ký tự; ảnh tối đa 20 megapixel, PDF tối đa 100 trang được đọc và 20 trang dùng OCR. Tệp chưa hỗ trợ đọc vẫn hiển thị tên và báo trạng thái.</p>
+                      <p className="material-hint">Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), PDF, OpenDocument và văn bản. OCR đọc tiếng Việt và tiếng Anh từ PDF quét, ảnh PNG/JPG/WebP/BMP ngay trên thiết bị. Tối đa 32 MiB/tệp, 10 tệp/chuyến, 50.000 ký tự; ảnh tối đa 20 megapixel, PDF tối đa 20 trang được đọc và 20 trang dùng OCR. Tệp chưa hỗ trợ đọc vẫn hiển thị tên và báo trạng thái.</p>
                       {materialProgress && <div className="material-progress">
                         <p role="status"><strong>{materialProgress.file}</strong><br/>
                           {{ loading: "Đang nạp bộ đọc", recognizing: "Đang nhận diện chữ (OCR)", rendering: "Đang dựng trang", extracting: "Đang đọc văn bản" }[materialProgress.phase]}
@@ -1025,6 +1085,17 @@ function AdventureWorkspace() {
                         <progress aria-label="Tiến độ đọc tài liệu" max={1} value={materialProgress.progress} />
                         <button onClick={() => materialRequest.current?.abort()}>Hủy đọc tài liệu</button>
                       </div>}
+                      <p className="material-hint">Xóa ghi chú không xóa nguồn tài liệu. Nút “Đọc bằng AI” gửi riêng tệp đã chọn tới máy chủ và Google Gemini để nhận diện chữ viết tay; bạn kiểm tra kết quả trước khi dùng. Tệp gốc chỉ được giữ tạm trong bộ nhớ cửa sổ này.</p>
+                      {sources.map((source) => <details className="material-source" key={source.id} open={!source.reviewed}>
+                        <summary>{source.name} · {source.reviewed ? "Đã kiểm tra" : "Cần kiểm tra nội dung"}</summary>
+                        <label>Nội dung nguồn · {source.name}<textarea rows={8} maxLength={50000} disabled={busy} value={source.text} onChange={(e) => setSources((items) => items.map((item) => item.id === source.id ? {...item,text:e.target.value,reviewed:false} : item))} placeholder="Nhập hoặc sửa bản chép đúng của tài liệu. Không tự dịch nội dung." /></label>
+                        <div className="choice-row">
+                          <button disabled={busy || source.text.trim().length < 10} onClick={() => { try { const reviewed = reviewMaterialSource(source, source.text); setSources((items) => items.map((item) => item.id === source.id ? reviewed : item)); setError(""); } catch(e) { setError(e instanceof Error ? e.message : "Không xác nhận được tài liệu."); } }}>Xác nhận nội dung đã kiểm tra</button>
+                          <button disabled={busy || !originalFiles.current.has(source.id) || !/\.(pdf|png|jpe?g|webp)$/i.test(source.name)} onClick={() => void readHandwriting(source.id)}>Đọc bằng AI · gửi tệp này</button>
+                          <button disabled={busy} onClick={() => { originalFiles.current.delete(source.id); setSources((items) => items.filter((item) => item.id !== source.id)); setMaterials((items) => items.filter((file) => source.covers ? !source.covers.includes(file.name) : file.sourceId !== source.id)); }}>Gỡ tài liệu</button>
+                        </div>
+                        {!originalFiles.current.has(source.id) && <small>Muốn đọc lại bằng AI, hãy nhập lại tệp gốc.</small>}
+                      </details>)}
                       {!!materials.length && <ul className="material-list" aria-label="Tài liệu đã chọn">{materials.map((file, i) => <li key={`${i}:${file.name}`}>
                         <strong>{file.name}</strong><span>{(file.size / 1024).toFixed(1)} KB · {file.message}</span>
                       </li>)}</ul>}
@@ -1080,7 +1151,7 @@ function AdventureWorkspace() {
                           goal.trim().length < 3 ||
                           !Number.isInteger(minutes) ||
                           minutes < 1 ||
-                          minutes > 240 ||
+                          minutes > 240 || !validBreaks ||
                           !exclusive
                         }
                         onClick={start}
@@ -1108,7 +1179,7 @@ function AdventureWorkspace() {
                       </span>
                       <h1>{active.goal}</h1>
                       <p>
-                        {active.state === "away"
+                        {rest ? "Dừng chân một chút. Chuyến sẽ tự tiếp tục sau giải lao." : active.state === "away"
                           ? "Đồng hồ vẫn chạy. Khoảng thời gian bạn rời đi không được cộng vào thời gian học."
                           : "Không vội vàng. Chỉ cần hiện diện ở đây."}
                       </p>
@@ -1117,10 +1188,12 @@ function AdventureWorkspace() {
                       <div
                         className="timer"
                         role="timer"
-                        aria-label="Thời gian còn lại"
+                        aria-label={rest ? "Thời gian giải lao còn lại" : "Thời gian học còn lại"}
                       >
-                        {clock(active.target - elapsedSeconds(active, now))}
+                        {clock(rest ? rest.remainingSeconds : active.target - elapsedSeconds(active, now))}
                       </div>
+                      {rest && <p className="break-status" role="status">Trạm dừng chân {rest.index}/{rest.count} · tự tiếp tục lúc {new Date(rest.endsAt).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}</p>}
+                      {active.breakPlan && <p className="material-hint">{active.target / 60} phút học · {active.breakPlan.count} lượt nghỉ × {active.breakPlan.seconds / 60} phút · tổng chuyến {totalDuration(active) / 60} phút</p>}
                       <div className="timer-label">
                         {Math.floor(focused(active) / 60)} PHÚT ĐÃ HỌC ·{" "}
                         {Math.round((focused(active) / active.target) * 100)}%
@@ -1148,11 +1221,11 @@ function AdventureWorkspace() {
                         }
                         ownId={owner}
                         decor={carriage?.decor}
-                        fog={active.state === "away"}
+                        fog={active.state === "away" && !rest}
                         calm
                         draftSeconds={active.groupId ? 0 : focused(active)}
                         targetSeconds={active.target}
-                        focusState={active.state}
+                        focusState={rest ? "break" : active.state}
                         reconnect={active.reconnect}
                       />
                       {active.groupId && <p className="overhead-hint">Bản đồ đoàn mở thêm vùng sau khi máy chủ xác nhận phần đóng góp của phiên này.</p>}
@@ -1172,6 +1245,7 @@ function AdventureWorkspace() {
                         <pre>{active.document}</pre>
                       </details>
                     )}
+                    {active.sources?.map((source) => <details className="panel study-notes" key={source.id}><summary>Nguồn tài liệu · {source.name}{!source.reviewed && " · chưa kiểm tra"}</summary><pre>{source.text || "Chưa đọc được nội dung nguồn."}</pre></details>)}
                     {!!active.materials?.length && <div className="panel material-list" aria-label="Tệp của phiên học">{active.materials.map((file, i) => <p key={`${i}:${file.name}`}><strong>{file.name}</strong> · {file.message}</p>)}</div>}
                   </>
                 ) : (
@@ -1680,6 +1754,7 @@ function AdventureWorkspace() {
                                   : "Đã lưu"}
                               </p>
                               <div className="session-analysis">
+                                {analysis.breakSeconds > 0 && <p>Giải lao: {clock(analysis.breakSeconds)} · không tính xao nhãng hoặc XP</p>}
                                 <span>{analysis.focusLabel} · {analysis.focusPercent === null ? "—" : `${Math.floor(analysis.focusPercent)}%`} tập trung</span>
                                 <span>Số lần xao nhãng: <b>{analysis.distractions}</b></span>
                                 <span>Điểm {s.quiz ? `${s.quiz.score}/${s.quiz.total}` : "Chưa làm"}</span>
@@ -1723,6 +1798,7 @@ function AdventureWorkspace() {
                         value={clock(summarySession.seconds)}
                         detail="Đã loại khoảng xao nhãng"
                       />
+                      <Stat icon="◷" label="THỜI GIAN GIẢI LAO" value={clock(analyzeSession(summarySession).breakSeconds)} detail="Nghỉ đúng lịch không tính xao nhãng hoặc XP" />
                       <Stat
                         icon="✦"
                         label="KINH NGHIỆM TOA"
@@ -1753,6 +1829,22 @@ function AdventureWorkspace() {
                         Ôn lại một chút trước khi nghỉ. Làm sau cũng được; phần
                         học của bạn đã được lưu.
                       </p>
+                      {!!saved.materials?.[summarySession.id]?.length && !saved.sources?.[summarySession.id]?.length && <div className="info-box"><p>Tài liệu này được lưu bằng phiên bản cũ. Khôi phục bản chép đã lưu hoặc dán nội dung đúng, rồi xác nhận làm nguồn câu hỏi.</p><button onClick={() => {const value = current.current;if(value.summarySessionId !== summarySession.id) return;commitRef.current({...value,sources:{...value.sources,[summarySession.id]:[recoveredMaterialSource(value.notes[summarySession.id] ?? "",value.materials?.[summarySession.id] ?? [])]}});}}>Khôi phục / nhập bản chép tài liệu cũ</button></div>}
+                      {(saved.sources?.[summarySession.id] ?? []).map((source) => <details className="material-source" key={source.id} open={!source.reviewed}>
+                        <summary>Nguồn câu hỏi · {source.name} · {source.reviewed ? "Đã kiểm tra" : "Cần kiểm tra"}</summary>
+                        <label>Bản chép tài liệu<textarea rows={7} maxLength={50000} value={source.text} onChange={(e) => {
+                          const value = current.current;
+                          if(value.summarySessionId !== summarySession.id) return;
+                          commitRef.current({...value,sources:{...value.sources,[summarySession.id]:(value.sources?.[summarySession.id] ?? []).map(item => item.id === source.id ? {...item,text:e.target.value,reviewed:false} : item)}});
+                        }} /></label>
+                        <button disabled={source.text.trim().length < 10} onClick={() => {try {
+                          const value = current.current;
+                          if(value.summarySessionId !== summarySession.id) return;
+                          const reviewed = reviewMaterialSource(source, source.text);
+                          commitRef.current({...value,sources:{...value.sources,[summarySession.id]:(value.sources?.[summarySession.id] ?? []).map(item => item.id === source.id ? reviewed : item)}});
+                          setError("");
+                        } catch(e) {setError(e instanceof Error ? e.message : "Không xác nhận được nguồn.");}}}>Xác nhận nội dung đã kiểm tra</button>
+                      </details>)}
                       <QuizPanel
                         key={`${owner}:${summarySession.id}`}
                         ownerId={owner}
@@ -1931,9 +2023,9 @@ function AdventureWorkspace() {
                   <div className="info-box">
                     <h3>Dữ liệu và quyền riêng tư</h3>
                     <p>
-                      Tài liệu nhập được giữ trên thiết bị, chỉ gửi cho AI khi
-                      bạn bấm tạo quiz. Dữ liệu học của tài khoản được lưu trên
-                      máy chủ; đoàn chỉ xem toa và tiến độ chung.
+                      Nội dung tài liệu được giữ trên thiết bị. Tạo câu hỏi gửi nguồn đã kiểm tra cho AI;
+                      “Đọc bằng AI” gửi riêng tệp gốc đã chọn tới Google Gemini để nhận diện chữ.
+                      Dữ liệu học của tài khoản được lưu trên máy chủ; đoàn chỉ xem toa và tiến độ chung.
                     </p>
                     <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, chủ đề, thời gian, loại thiết bị, tóm tắt mục tiêu,
                       số lần xao nhãng và điểm quiz trong Lịch sử chuyến đi, gồm cả chuyến kết thúc sớm.
@@ -1958,7 +2050,7 @@ function AdventureWorkspace() {
       </div>
       {active && view !== "focus" && (
         <button className="active-trip" onClick={() => go("focus")}>
-          ▥ Chuyến đang chạy · {clock(active.target - elapsedSeconds(active, now))} →
+          ▥ Chuyến đang chạy · {clock(rest ? rest.remainingSeconds : active.target - elapsedSeconds(active, now))} →
         </button>
       )}
       {confirm && (

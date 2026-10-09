@@ -7,6 +7,14 @@ vi.mock("@google/genai", async importOriginal => {
 import { config } from "../src/config.js";
 import { generateGeminiQuiz, quizResponseSchema } from "../src/gemini.js";
 const question = { id: "q1", question: "Question?", options: ["A", "B", "C", "D"], correctAnswerIndex: 1, explanation: "Reason" };
+const sourceText = "In photosynthesis, chlorophyll absorbs light energy.";
+const groundedQuestion = {
+  id: "q1", question: "What absorbs light energy during photosynthesis?",
+  options: ["Chlorophyll", "Sound", "Pressure", "Gravity"],
+  correctAnswerIndex: 0,
+  explanation: "Chlorophyll absorbs light energy during photosynthesis.",
+  sourceExcerpt: "chlorophyll absorbs light energy",
+};
 const originalKey = config.GEMINI_API_KEY;
 const originalModel = config.GEMINI_MODEL;
 const originalFallbackModel = config.GEMINI_FALLBACK_MODEL;
@@ -20,17 +28,20 @@ afterEach(() => {
 describe("Gemini adapter", () => {
   it("sends untrusted study data with a fixed JSON schema and configured model", async () => {
     config.GEMINI_API_KEY = "test-only-key";
-    generateContent.mockResolvedValue({ text: JSON.stringify([question]) });
-    expect(await generateGeminiQuiz({ topic: "biology", documentText: "Study material text", goal: "Review cells", count: 1 })).toEqual([question]);
+    generateContent.mockResolvedValue({ text: JSON.stringify([groundedQuestion]) });
+    expect(await generateGeminiQuiz({ topic: "biology", documentText: sourceText, documentAttached: true, goal: "Review photosynthesis", count: 1 }))
+      .toEqual([groundedQuestion]);
     const request = generateContent.mock.calls[0][0];
     expect(request.model).toBe(config.GEMINI_MODEL);
     expect(request.config.responseMimeType).toBe("application/json");
-    expect(request.config.responseJsonSchema).toEqual(quizResponseSchema());
+    expect(request.config.responseJsonSchema).toEqual(quizResponseSchema(true));
     expect(request.config.responseJsonSchema.items.properties.options.minItems).toBe(4);
     expect(request.config.responseJsonSchema.items.required).toContain("knowledgePoint");
-    expect(JSON.parse(request.contents).studyData.documentText).toBe("Study material text");
-    expect(JSON.parse(request.contents).studyData.goal).toBe("Review cells");
+    expect(request.config.responseJsonSchema.items.required).toContain("sourceExcerpt");
+    expect(JSON.parse(request.contents).studyData.documentText).toBe(sourceText);
+    expect(JSON.parse(request.contents).studyData.goal).toBe("Review photosynthesis");
     expect(request.config.systemInstruction).toContain("đúng 1 câu");
+    expect(request.config.systemInstruction).toContain("không bù kiến thức ngoài tài liệu");
     expect(request.config.abortSignal).toBeInstanceOf(AbortSignal);
   });
   it("keeps exact choice bounds without expanding the quiz array into fixed output bounds", () => {
@@ -85,6 +96,19 @@ describe("Gemini adapter", () => {
     await expect(generateGeminiQuiz({ topic: "biology", count: 1 })).rejects.toMatchObject({ status: 503 });
     expect(generateContent).not.toHaveBeenCalled();
   });
+  it("rejects an attached file without source text before contacting Gemini", async () => {
+    config.GEMINI_API_KEY = "test-only-key";
+    await expect(generateGeminiQuiz({ topic: "biology", documentAttached: true, count: 1 }))
+      .rejects.toMatchObject({ name: "ZodError" });
+    expect(generateContent).not.toHaveBeenCalled();
+  });
+  it("returns a specific error when the source cannot support the requested quiz", async () => {
+    config.GEMINI_API_KEY = "test-only-key";
+    generateContent.mockResolvedValue({ text: "[]" });
+    await expect(generateGeminiQuiz({
+      topic: "biology", documentAttached: true, documentText: sourceText, count: 1,
+    })).rejects.toMatchObject({ status: 422, kind: "insufficient-study-material" });
+  });
   it.each(["not json", "[]", undefined])("rejects invalid/refused output %s", async text => {
     config.GEMINI_API_KEY = "test-only-key";
     generateContent.mockResolvedValue({ text });
@@ -103,12 +127,12 @@ describe("Gemini adapter", () => {
     generateContent.mockRejectedValue(error);
     await expect(generateGeminiQuiz({ topic: "biology", count: 1 })).rejects.toMatchObject({ status, kind, message });
   });
-  it("falls back once to a distinct model when the primary is overloaded", async () => {
+  it.each([[503, "UNAVAILABLE"], [504, "DEADLINE_EXCEEDED"]])("falls back once within the deadline after an explicit transient response %s", async (status, providerStatus) => {
     config.GEMINI_API_KEY = "test-only-key";
     config.GEMINI_MODEL = "gemini-primary";
     config.GEMINI_FALLBACK_MODEL = "gemini-fallback";
     generateContent
-      .mockRejectedValueOnce({ status: 503, message: JSON.stringify({ error: { status: "UNAVAILABLE" } }) })
+      .mockRejectedValueOnce({ status, message: JSON.stringify({ error: { status: providerStatus } }) })
       .mockResolvedValueOnce({ text: JSON.stringify([question]) });
 
     await expect(generateGeminiQuiz({ topic: "biology", count: 1 })).resolves.toEqual([question]);

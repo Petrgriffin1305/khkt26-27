@@ -152,3 +152,12 @@ test("saved drafts are isolated by the existing account storage key", () => {
   assert.deepEqual(Object.keys(readSaved("account-a").quizDrafts ?? {}), ["account-trip"]);
   assert.deepEqual(Object.keys(readSaved("guest").quizDrafts ?? {}), ["guest-trip"]);
 });
+
+test('verified document sources survive reload independently of erased notes',()=>{
+ rows.clear();const saved=emptySaved();saved.notes['source-session']='';
+ saved.materials={'source-session':[{name:'Vocabulary.pdf',size:21278187,type:'application/pdf',status:'extracted',message:'Đã kiểm tra'}]};
+ saved.sources={'source-session':[{id:'source-a',name:'Vocabulary.pdf',text:'cater: phục vụ\nprinciple: nguyên lý',source:'ai-vision',requiresReview:true,reviewed:true}]};
+ writeSaved('owner-a',saved);const reloaded=readSaved('owner-a');
+ assert.equal(reloaded.notes['source-session'],'');assert.match(reloaded.sources['source-session'][0].text,/principle/);
+ assert.equal(readSaved('owner-b').sources?.['source-session'],undefined);
+});

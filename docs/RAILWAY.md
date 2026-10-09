@@ -35,6 +35,8 @@ The launcher sets `HOST=0.0.0.0`, `NODE_ENV=production`, and `WEB_DIST_DIR=dist`
 
 Optionally add `GEMINI_API_KEY` as a secret variable on the Viễn Du service to enable AI-generated quizzes. Keep it server-side; never set it as `VITE_GEMINI_API_KEY`. Without it, study sessions still work, but AI questions are unavailable; the app does not substitute a static question bank.
 
+Handwritten PDF/image transcription uses `GEMINI_READING_MODEL` (default `gemini-3.5-flash-lite`) independently from the question model `GEMINI_MODEL`. The learner explicitly chooses AI reading before a file is sent to Google. PDFs over four pages are split into four-page groups, with at most two in flight under one bounded deadline; partial results mark unread pages for review. `GEMINI_FALLBACK_MODEL` is used only for explicit transient provider responses (503 UNAVAILABLE or 504 DEADLINE_EXCEEDED) while time remains. Authentication, quota and billing errors are reported directly.
+
 The first deployment and each later container start run `prisma migrate deploy`, seed the study topics, and then start the API. The `/health` endpoint reports whether PostgreSQL and Redis are reachable. The service becomes healthy only after those dependencies are available.
 
 ## Build locally

@@ -61,9 +61,33 @@ export function revealedStationIndex(
   return explorationProgress(journey, draftSeconds, targetSeconds).station;
 }
 
-/** Legacy radius for the 3D scene; its size still follows credited focus time. */
-export function revealedRadius(seconds: number, target: number): number {
-  const progress = Number.isFinite(seconds) && Number.isFinite(target) && target > 0
-    ? Math.min(1, Math.max(0, seconds / target)) : 0;
-  return 35 + 30 * progress;
+/** Progress through the five-stop route as a stable 0..1 value for scenic reveals. */
+export function journeyExplorationFraction(
+  journey: Pick<Journey, "station" | "remaining" | "threshold"> | undefined,
+  draftSeconds = 0,
+  targetSeconds?: number,
+): number {
+  const progress = explorationProgress(journey, draftSeconds, targetSeconds);
+  return Math.min(1, Math.max(0, (progress.station + progress.fraction) / 4));
+}
+
+/** Opaque until the approach window, then smoothly shrinks to zero at arrival. */
+export function cloudScaleAtProgress(
+  progress: number,
+  clearsAt: number,
+  approach = 0.12,
+): number {
+  const current = Number.isFinite(progress)
+    ? Math.min(1, Math.max(0, progress))
+    : 0;
+  if (!Number.isFinite(clearsAt)) return 1;
+  const end = Math.min(1, Math.max(0, clearsAt));
+  if (current >= end) return 0;
+  if (!Number.isFinite(approach) || approach <= 0) return 1;
+  return Math.min(1, Math.max(0, (end - current) / approach));
+}
+
+/** Only an active focus view or a non-focus journey scene moves scenery. */
+export function sceneryShouldMove(state?: string): boolean {
+  return state === undefined || state === "focus" || state === "reconnecting";
 }

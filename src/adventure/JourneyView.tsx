@@ -2,8 +2,9 @@ import { useState } from "react";
 import type { Journey } from "../../backend/src/adventure/domain";
 import { Scene } from "./Scene";
 import { TopDownMap } from "./TopDownMap";
+import { TopDownScene } from "./TopDownScene";
 import type { ActiveTrip } from "./focus";
-import { revealedRadius } from "./exploration";
+import { journeyExplorationFraction, sceneryShouldMove } from "./exploration";
 
 export function JourneyView({
   journey,
@@ -26,11 +27,18 @@ export function JourneyView({
   calm?: boolean;
   draftSeconds?: number;
   initial?: "2d" | "3d";
-  focusState?: ActiveTrip["state"];
+  focusState?: ActiveTrip["state"] | "break";
   reconnect?: number;
   targetSeconds?: number;
 }) {
   const [camera, setCamera] = useState(initial);
+  const exploration = journeyExplorationFraction(
+    journey,
+    draftSeconds,
+    targetSeconds,
+  );
+  const running = sceneryShouldMove(focusState);
+  const coast = journey?.branch === "coast";
   return (
     <div className="journey-view">
       <div
@@ -52,7 +60,16 @@ export function JourneyView({
           ⌁ {focusState ? "Góc nhìn 2D" : "Bản đồ 2D"} · {carriages.length} toa
         </button>
       </div>
-      {camera === "2d" ? (
+      {camera === "2d" && focusState ? (
+        <TopDownScene
+          carriages={carriages}
+          ownId={ownId}
+          running={running}
+          fogStrength={fog ? 1 : Math.min(1, Math.max(0, reconnect / 120))}
+          exploration={exploration}
+          coast={coast}
+        />
+      ) : camera === "2d" ? (
         <TopDownMap
           journey={journey}
           carriages={carriages}
@@ -68,13 +85,9 @@ export function JourneyView({
           decor={decor}
           fog={fog}
           fogStrength={fog ? 1 : Math.min(1, Math.max(0, reconnect / 120))}
-          revealRadius={
-            focusState && targetSeconds !== undefined
-              ? revealedRadius(draftSeconds, targetSeconds)
-              : undefined
-          }
+          exploration={exploration}
           calm={calm}
-          running={!focusState || focusState === "focus" || focusState === "reconnecting"}
+          running={running}
           station={journey?.station}
           branch={journey?.branch}
         />

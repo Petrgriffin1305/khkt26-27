@@ -1,3 +1,5 @@
+import { isValidBreakPlan } from "../../backend/src/adventure/domain.ts";
+import { validMaterialSources, type MaterialSource } from "./materialSources.ts";
 import type { ActiveTrip } from "./focus";
 import { isDeviceCategory } from "./device.ts";
 import { isValidQuizAssessment, isValidQuizDraftMap, type QuizDraft } from "./quizDrafts.ts";
@@ -13,6 +15,7 @@ export type Saved = {
   snapshot: Snapshot | null;
   local: World;
   notes: Record<string, string>;
+  sources?: Record<string, MaterialSource[]>;
   materials?: Record<string, NonNullable<ActiveTrip["materials"]>>;
   guestPublished?: string[];
   quizDrafts?: Record<string, QuizDraft>;
@@ -25,6 +28,7 @@ export const emptySaved = (): Saved => ({
   local: emptyWorld(),
   notes: {},
   materials: {},
+  sources: {},
   guestPublished: [],
   quizDrafts: {},
 });
@@ -34,7 +38,7 @@ const number = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v 
 const count = (v: unknown) => Number.isSafeInteger(v) && Number(v) >= 0;
 const texts = (v: unknown) => Array.isArray(v) && v.every((item) => typeof item === "string");
 const validMaterials = (v: unknown) => v === undefined || (Array.isArray(v) && v.length <= 10 &&
-  v.every((file) => record(file) && number(file.size) &&
+  v.every((file) => record(file) && number(file.size) && (file.sourceId === undefined || typeof file.sourceId === "string") &&
     [file.name, file.type, file.status, file.message].every((field) => typeof field === "string")));
 function validJourney(v: unknown) {
   return record(v) && [v.seconds, v.station, v.threshold, v.remaining].every(number) &&
@@ -54,6 +58,7 @@ function validSegments(v: unknown) {
 function validSession(v: unknown) {
   return record(v) && typeof v.id === "string" && typeof v.userId === "string" &&
     typeof v.goal === "string" && typeof v.topic === "string" &&
+    (v.breakPlan === undefined || isValidBreakPlan(v.breakPlan,v.target)) &&
     (v.deviceCategory === undefined || isDeviceCategory(v.deviceCategory)) &&
     (v.distractions === undefined || count(v.distractions)) &&
     (v.quiz === undefined || isValidQuizAssessment(v.quiz)) &&
@@ -61,6 +66,7 @@ function validSession(v: unknown) {
 }
 function validSaved(v: unknown): v is Saved {
   if (!record(v) || !record(v.local) || !record(v.notes) ||
+      (v.sources !== undefined && (!record(v.sources) || !Object.values(v.sources).every(validMaterialSources))) ||
       (v.materials !== undefined && (!record(v.materials) || !Object.values(v.materials).every(validMaterials))) ||
       (v.guestPublished !== undefined && (!Array.isArray(v.guestPublished) ||
         !v.guestPublished.every((id) => typeof id === "string" && id.length > 0) ||
@@ -81,6 +87,9 @@ function validSaved(v: unknown): v is Saved {
         !["focus", "away", "reconnecting", "paused", "pending"].includes(String(a.state)) ||
         (a.deviceCategory !== undefined && !isDeviceCategory(a.deviceCategory)) ||
         (a.distractions !== undefined && !count(a.distractions)) ||
+        (a.breakPlan !== undefined && !isValidBreakPlan(a.breakPlan,a.target)) ||
+        (a.awayCounted !== undefined && typeof a.awayCounted !== "boolean") ||
+        (a.sources !== undefined && !validMaterialSources(a.sources)) ||
         !validSegments(a.segments) || !validMaterials(a.materials)) return false;
   }
   if (v.snapshot !== null) {

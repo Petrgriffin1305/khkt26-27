@@ -61,6 +61,27 @@ test('session analysis uses actual elapsed time and caps focus to that elapsed t
   assert.equal(short.focusPercent, 100);
 });
 
+test('planned breaks are reported as rest and excluded from focus quality time', () => {
+  const result = analyzeSession(session({
+    started: 1000,
+    ended: 421000,
+    target: 600,
+    breakPlan: { count: 1, seconds: 120 },
+    segments: [
+      { start: 1000, end: 301000, kind: 'focus' },
+      { start: 301000, end: 421000, kind: 'break' },
+    ],
+    seconds: 300,
+    distractions: 0,
+  }));
+
+  assert.equal(result.elapsedSeconds, 420);
+  assert.equal(result.breakSeconds, 120);
+  assert.equal(result.studyElapsedSeconds, 300);
+  assert.equal(result.focusedSeconds, 300);
+  assert.equal(result.focusPercent, 100);
+});
+
 test('focus labels use the stated 80 and 50 percent thresholds', () => {
   const at80 = analyzeSession(session({ ended: 101000, seconds: 80 }));
   const at50 = analyzeSession(session({ ended: 101000, seconds: 50 }));

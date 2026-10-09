@@ -6,6 +6,7 @@ import { studyTopics } from "./topics";
 type Run = {
   id: string; tripCode: string; testerCode: string; topic: string; goalSummary: string;
   targetSeconds: number; elapsedSeconds: number; focusedSeconds: number; distractions: number;
+  breakSeconds?: number; plannedBreakSeconds?: number; studyElapsedSeconds?: number;
   deviceCategory: DeviceCategory | null;
   completed: boolean; quizScore: number | null; quizTotal: number | null; startedAt: string; endedAt: string;
 };
@@ -49,17 +50,18 @@ export function ExperimentResults() {
     {error && <p role="alert" className="info-box">{error}</p>}
     {data && <><p>{data.total} chuyến công khai · Chuyến offline xuất hiện sau khi gửi thành công. Lịch sử cập nhật mỗi 30 giây.</p>
       {data.runs.length ? <div className="experiment-table-wrap"><table className="experiment-table"><caption>Lịch sử các chuyến học</caption>
-        <thead><tr><th>Mã chuyến</th><th>Thời gian</th><th>Thiết bị</th><th>Mục tiêu / Chủ đề</th><th>Thời lượng</th><th>Tập trung</th><th>Xao nhãng</th><th>Điểm</th></tr></thead>
+        <thead><tr><th>Mã chuyến</th><th>Thời gian</th><th>Thiết bị</th><th>Mục tiêu / Chủ đề</th><th>Thời lượng</th><th>Giải lao</th><th>Tập trung</th><th>Xao nhãng</th><th>Điểm</th></tr></thead>
         <tbody>{data.runs.map(r => <tr key={r.id}><td><strong>{r.tripCode}</strong><br/><small>{r.testerCode}</small></td>
           <td><time dateTime={r.startedAt}>Bắt đầu: {time(r.startedAt)}</time><br/><time dateTime={r.endedAt}>Kết thúc: {time(r.endedAt)}</time></td>
           <td>{deviceLabel(r.deviceCategory)}</td>
           <td className="experiment-goal"><strong>{r.goalSummary}</strong><br/><small>{studyTopics.find(t => t.id === r.topic)?.name ?? r.topic}</small></td>
-          <td>{duration(r.elapsedSeconds)} / {duration(r.targetSeconds)}<br/><small>{r.completed ? "Đủ giờ" : "Kết thúc sớm"}</small></td>
+          <td>{duration(r.elapsedSeconds)} / {duration(r.targetSeconds + (r.plannedBreakSeconds ?? 0))}<br/><small>{r.completed ? "Đủ giờ" : "Kết thúc sớm"}</small></td>
+          <td>{duration(r.breakSeconds ?? 0)}<br/><small>{duration(r.plannedBreakSeconds ?? 0)} đã lên lịch</small></td>
           <td>{duration(r.focusedSeconds)}</td><td>{r.distractions} lần</td>
           <td>{r.quizTotal === null || r.quizScore === null ? "Chưa làm" : `${r.quizScore}/${r.quizTotal}`}</td></tr>)}</tbody></table></div>
         : <div className="panel"><h2>Chưa có chuyến đi nào</h2><p>Kết thúc và lưu một phiên học để chuyến đi tự xuất hiện trong lịch sử.</p></div>}
       <div className="choice-row"><button disabled={loading || offset === 0} onClick={() => { setLoading(true); setData(null); setOffset(Math.max(0, offset - 50)); }}>Trang trước</button>
         <button disabled={loading || offset + 50 >= data.total} onClick={() => { setLoading(true); setData(null); setOffset(offset + 50); }}>Trang sau</button></div></>}
-    <p className="material-hint">Thời gian tập trung loại trừ khoảng rời phiên; đồng hồ chuyến vẫn chạy liên tục. Điểm quiz được chấm trên máy chủ. Email tài khoản và nội dung tài liệu học được giữ riêng. CSV chứa tối đa 10.000 chuyến gần nhất.</p>
+    <p className="material-hint">Thời gian tập trung loại trừ khoảng rời phiên và giải lao; đồng hồ chuyến vẫn chạy liên tục. Điểm quiz được chấm trên máy chủ. Email tài khoản và nội dung tài liệu học được giữ riêng. CSV chứa tối đa 10.000 chuyến gần nhất.</p>
   </section>;
 }

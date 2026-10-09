@@ -1818,3 +1818,17 @@ body {
 .material-progress { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #eef3e9; }
 .material-progress p { margin: 0 0 10px; overflow-wrap: anywhere; }
 .material-progress progress { display: block; width: 100%; height: 12px; margin-bottom: 12px; accent-color: var(--green); }
+
+.material-source { padding: 1rem; margin: .8rem 0; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.material-source summary { cursor: pointer; font-weight: 650; margin-bottom: .75rem; overflow-wrap: anywhere; }
+.material-source label { display: grid; gap: .6rem; }
+.material-source textarea { width: 100%; line-height: 1.6; }
+.material-source .choice-row { flex-wrap: wrap; margin-top: .7rem; }
+.handwriting-option { display: flex !important; flex-direction: row; align-items: center; gap: .7rem; }
+.handwriting-option input { width: auto; }
+
+.break-picker { margin: 1rem 0; border: 1px solid #dbe3d5; border-radius: 12px; padding: 1rem; display: grid; gap: .7rem; }
+.break-picker legend { font-weight: 650; }
+.break-picker label { display: grid; gap: .35rem; }
+.break-picker input { max-width: 9rem; }
+.break-status { color: #426c58; background: #edf2e8; padding: .75rem; border-radius: 12px; font-weight: 650; }

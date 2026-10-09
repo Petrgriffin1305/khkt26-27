@@ -1,4 +1,4 @@
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_TEXT_CHARS = 50_000;
 
 import { extractImageWithOcr, extractPdfWithOcr } from './ocrMaterial.mjs';
@@ -58,7 +58,7 @@ function messageFor(status, format = '') {
   if (status === 'too-large') {
     return format === 'image'
       ? 'Hình ảnh vượt giới hạn kích thước hoặc số điểm ảnh an toàn nên chưa được giải mã.'
-      : 'Tệp vượt quá giới hạn 20 MB nên chưa được đọc.';
+      : 'Tệp vượt quá giới hạn 32 MB nên chưa được đọc.';
   }
   if (status === 'metadata-only') {
     return format === 'legacy'
@@ -76,7 +76,7 @@ function messageFor(status, format = '') {
   return 'Không đọc được nội dung tệp. Tệp có thể bị lỗi hoặc sai định dạng.';
 }
 
-function makeResult(file, status, text = '', format = '', message) {
+function makeResult(file, status, text = '', format = '', message, provenance = {}) {
   return {
     name: String(file?.name || 'Tệp không tên'),
     size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
@@ -84,6 +84,11 @@ function makeResult(file, status, text = '', format = '', message) {
     text,
     status,
     message: message ?? messageFor(status, format),
+    ...(provenance.source ? { source: provenance.source } : {}),
+    ...(provenance.quality ? { quality: provenance.quality } : {}),
+    ...(Number.isFinite(provenance.confidence)
+      ? { confidence: Math.max(0, Math.min(100, provenance.confidence)) }
+      : {}),
   };
 }
 
@@ -358,6 +363,7 @@ export async function extractMaterialFile(file, options = {}) {
       limited.text,
       detected.format,
       extracted.message,
+      extracted,
     );
   } catch (error) {
     if (options.signal?.aborted || error?.name === 'AbortError') return makeResult(file, 'cancelled');

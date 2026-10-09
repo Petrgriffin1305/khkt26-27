@@ -46,7 +46,15 @@ async function handleMessage(message) {
     if (!enginePromise) enginePromise = createLocalEngine();
     engine = await enginePromise;
     const result = await engine.recognize(message.image);
-    self.postMessage({ type: 'result', id: message.id, text: result?.data?.text || '' });
+    const confidence = result?.data?.confidence;
+    self.postMessage({
+      type: 'result',
+      id: message.id,
+      text: result?.data?.text || '',
+      ...(typeof confidence === 'number' && Number.isFinite(confidence)
+        ? { confidence: Math.max(0, Math.min(100, confidence)) }
+        : {}),
+    });
   } catch (error) {
     enginePromise = undefined;
     try { await engine?.terminate(); } catch { /* worker is already failing */ }

@@ -109,6 +109,67 @@ describe("adventure progress", () => {
       settle(emptyWorld(), input("future", now, now + 60000), now),
     ).toThrow("Thời gian");
   });
+  it("accepts scheduled break segments without awarding XP for rest", () => {
+    const start = now - 3660000;
+    const breakStart = start + 1800000;
+    const value = {
+      ...input("planned-break", start, now),
+      target: 3600,
+      breakPlan: { count: 1, seconds: 60 },
+      segments: [
+        { start, end: breakStart, kind: "focus" as const },
+        { start: breakStart, end: breakStart + 60000, kind: "break" as const },
+        { start: breakStart + 60000, end: now, kind: "focus" as const },
+      ],
+    };
+    const world = emptyWorld();
+    const result = settle(world, value, now);
+
+    expect(result.seconds).toBe(3600);
+    expect(result.contribution).toBe(3600);
+    expect(person(world, "u").seconds).toBe(3600);
+    expect(result.breakPlan).toEqual({ count: 1, seconds: 60 });
+  });
+  it("rejects invalid break counts, unplanned rest segments, and time past the plan", () => {
+    const start = now - 120000;
+    const base = {
+      ...input("break-invalid", start, now),
+      target: 120,
+      breakPlan: { count: 1, seconds: 60 },
+      segments: [
+        { start, end: start + 60000, kind: "focus" as const },
+        { start: start + 60000, end: now, kind: "break" as const },
+      ],
+    };
+
+    expect(() => settle(emptyWorld(), { ...base, breakPlan: { count: 2, seconds: 60 } }, now))
+      .toThrow(/kế hoạch nghỉ/i);
+    expect(() => settle(emptyWorld(), { ...base, breakPlan: { count: 0, seconds: 60 } }, now))
+      .toThrow(/không theo kế hoạch/i);
+    const deadline = start + 180000;
+    expect(() => settle(emptyWorld(), { ...base, ended: deadline + 1, segments: [] }, deadline + 1))
+      .toThrow(/thời lượng nghỉ/i);
+  });
+  it("rejects focus, material, and distraction claims during scheduled rest", () => {
+    const start = now - 120000;
+    const base = {
+      ...input("break-credit", start, now),
+      target: 120,
+      breakPlan: { count: 1, seconds: 60 },
+      segments: [
+        { start, end: start + 60000, kind: "focus" as const },
+        { start: start + 60000, end: now, kind: "focus" as const },
+      ],
+    };
+
+    for (const kind of ["focus", "material", "distraction"] as const) {
+      const segments = [
+        { start, end: start + 60000, kind: "focus" as const },
+        { start: start + 60000, end: now, kind },
+      ];
+      expect(() => settle(emptyWorld(), { ...base, segments }, now)).toThrow(/trùng thời gian nghỉ/i);
+    }
+  });
   it("applies the group cap without removing individual XP and keeps member data private", () => {
     const w = emptyWorld(),
       p = person(w, "u");

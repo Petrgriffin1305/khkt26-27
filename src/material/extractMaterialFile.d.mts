@@ -23,7 +23,15 @@ export interface MaterialFileResult {
   text: string;
   status: MaterialFileStatus;
   message: string;
+  /** Where quiz text came from; present for PDFs and image OCR. */
+  source?: MaterialExtractionSource;
+  /** OCR output is unverified and must be checked before use. */
+  quality?: 'needs-review';
+  /** Mean Tesseract page confidence for non-empty OCR pages, 0–100; not a calibrated probability. */
+  confidence?: number;
 }
+
+export type MaterialExtractionSource = 'embedded-text' | 'local-ocr' | 'mixed';
 
 export interface MaterialExtractionOptions {
   /** Remaining quiz text budget available for this file. Capped at 50,000 characters. */

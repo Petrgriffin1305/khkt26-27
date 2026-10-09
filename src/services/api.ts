@@ -75,8 +75,11 @@ async function fetchWithTimeout(path: string, init: RequestInit) {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    ["/quizzes/generate", "/quiz/generate"].includes(path) ? 100000 : 30000,
+    path === "/materials/read" ? 115000 : ["/quizzes/generate", "/quiz/generate"].includes(path) ? 100000 : 30000,
   );
+  const abort = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) abort();
+  else init.signal?.addEventListener("abort", abort, { once: true });
   const url = `${API_URL}${path}`;
   try {
     return await fetch(url, {
@@ -103,6 +106,7 @@ async function fetchWithTimeout(path: string, init: RequestInit) {
     throw new ApiError(failure.status, failure.message);
   } finally {
     clearTimeout(timeout);
+    init.signal?.removeEventListener("abort", abort);
   }
 }
 async function decode<T>(response: Response, path?: string): Promise<T> {

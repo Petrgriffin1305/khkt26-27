@@ -6,12 +6,34 @@ const question = {
   options: ["Queue", "Stack", "Array", "Graph"],
   correctAnswerIndex: 1, explanation: "Stack lấy phần tử mới nhất ra trước.",
 };
+const groundedQuestion = {
+  ...question,
+  question: "Chất diệp lục hấp thụ điều gì trong quang hợp?",
+  options: ["Ánh sáng", "Âm thanh", "Nhiệt", "Áp suất"],
+  correctAnswerIndex: 0,
+  explanation: "Chất diệp lục hấp thụ năng lượng ánh sáng.",
+  sourceExcerpt: "chlorophyll hấp thụ năng lượng ánh sáng",
+};
+const glossaryQuestion = {
+  id: "glossary-1",
+  question: "What does abandon mean?",
+  options: ["ở lại", "từ bỏ", "mượn", "bắt đầu"],
+  correctAnswerIndex: 1,
+  explanation: "Abandon nghĩa là từ bỏ hoặc bỏ rơi.",
+  sourceExcerpt: "abandon (v): từ bỏ, bỏ rơi.",
+};
 
 describe("Gemini request", () => {
   it("accepts topic only and trims study text", () => {
-    expect(geminiRequestSchema.parse({ topic: " biology " })).toEqual({ topic: "biology", count: 3 });
+    expect(geminiRequestSchema.parse({ topic: " biology " })).toEqual({ topic: "biology", count: 3, documentAttached: false });
     expect(geminiRequestSchema.parse({ topic: "biology", documentText: "  Nội dung bài học  ", count: 1 })
       .documentText).toBe("Nội dung bài học");
+  });
+  it("requires OCR text when the caller says a file is attached", () => {
+    expect(geminiRequestSchema.safeParse({ topic: "biology", documentAttached: true }).success).toBe(false);
+    expect(geminiRequestSchema.parse({
+      topic: "biology", documentAttached: true, documentText: "Nội dung bài học đủ dài",
+    }).documentAttached).toBe(true);
   });
   it("accepts thirty questions and a bounded learning goal", () => {
     expect(geminiRequestSchema.parse({ topic: "biology", count: 30, goal: `  ${"g".repeat(500)}  ` }))
@@ -32,6 +54,38 @@ describe("Gemini request", () => {
 describe("Gemini output", () => {
   it("accepts a direct question array", () => {
     expect(parseGeneratedQuiz(JSON.stringify([question]), 1)).toEqual([question]);
+  });
+  it("requires an exact source excerpt and concept overlap for document-grounded questions", () => {
+    const source = "Trong quang hợp, chlorophyll hấp thụ năng lượng ánh sáng.";
+    expect(parseGeneratedQuiz(JSON.stringify([groundedQuestion]), 1, source)).toEqual([groundedQuestion]);
+    expect(() => parseGeneratedQuiz(JSON.stringify([{
+      ...groundedQuestion,
+      sourceExcerpt: "Mitochondria produce ATP from glucose.",
+    }]), 1, source)).toThrow();
+    expect(() => parseGeneratedQuiz(JSON.stringify([{
+      ...groundedQuestion,
+      question: "Enzyme nào tổng hợp ATP trong ty thể?",
+      explanation: "ATP synthase tổng hợp ATP trong ty thể.",
+    }]), 1, source)).toThrow();
+  });
+  it("accepts a glossary answer when the answer is quoted and its headword grounds the question", () => {
+    const source = "abandon (v): từ bỏ, bỏ rơi.";
+    expect(parseGeneratedQuiz(JSON.stringify([glossaryQuestion]), 1, source)).toEqual([glossaryQuestion]);
+  });
+  it("rejects an answer that occurs only inside another source word", () => {
+    const source = "partial chart";
+    const substringAnswer = {
+      ...question,
+      question: "What does partial describe?",
+      options: ["art", "whole", "complete", "full"],
+      correctAnswerIndex: 0,
+      explanation: "Partial describes the chart.",
+      sourceExcerpt: source,
+    };
+    expect(() => parseGeneratedQuiz(JSON.stringify([substringAnswer]), 1, source)).toThrow();
+    expect(parseGeneratedQuiz(JSON.stringify([{
+      ...substringAnswer, options: ["chart", "whole", "complete", "full"],
+    }]), 1, source)).toHaveLength(1);
   });
   it("accepts optional knowledge points and a thirty-question response", () => {
     const questions = Array.from({ length: 30 }, (_, index) => ({

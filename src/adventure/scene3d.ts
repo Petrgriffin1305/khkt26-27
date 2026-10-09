@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { cloudScaleAtProgress } from "./exploration.ts";
 export type SceneOptions = {
   color: string;
   fog: boolean;
@@ -9,6 +10,7 @@ export type SceneOptions = {
   branch: string;
   calm: boolean;
   moving: boolean;
+  exploration: number;
 };
 export type SceneController = {
   update: (options: SceneOptions) => void;
@@ -21,6 +23,20 @@ const palettes = [
   { sky: "#ceccec", ground: "#9fb1ba", hill: "#8498b2", tree: "#5e7c9b" },
   { sky: "#f4dabe", ground: "#b9cd8f", hill: "#a9c09b", tree: "#689880" },
 ];
+
+// These groups sit in the visible upper terrain of the centered camera view.
+// Their overlapping puffs hide the unexplored backdrop while leaving the rail
+// and train silhouette clear. Positions use the scene's initial camera pose.
+export const discoveryCloudLayout = [
+  { x: -8, y: 1.5, z: -8, clearsAt: 0.18, size: 0.98 },
+  { x: -5.5, y: 1.9, z: -8, clearsAt: 0.29, size: 1.08 },
+  { x: -3, y: 2.2, z: -8, clearsAt: 0.4, size: 0.96 },
+  { x: -0.5, y: 2.4, z: -8, clearsAt: 0.51, size: 1.04 },
+  { x: 2, y: 2.5, z: -8, clearsAt: 0.62, size: 0.98 },
+  { x: 4.5, y: 2.3, z: -8, clearsAt: 0.74, size: 1.06 },
+  { x: 7, y: 2, z: -8, clearsAt: 0.88, size: 1 },
+] as const;
+
 export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -37,7 +53,7 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
   scene.fog = new THREE.Fog(palettes[0].sky, 27, 60);
   const camera = new THREE.OrthographicCamera(-10, 10, 6, -6, 0.1, 100);
   camera.position.set(10, 8, 13);
-  camera.lookAt(0, 1.4, 0);
+  camera.lookAt(0.7, 1.4, 0);
   scene.add(new THREE.HemisphereLight("#fff6df", "#749c85", 2.7));
   const sunLight = new THREE.DirectionalLight("#fff0d1", 3.2);
   sunLight.position.set(-7, 12, 8);
@@ -379,24 +395,41 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
     puff.castShadow = false;
     smoke.push(puff);
   }
-  const clouds: THREE.Group[] = [];
-  for (let i = 0; i < 5; i++) {
+  const clouds = discoveryCloudLayout.map((placement, i) => {
     const cloud = new THREE.Group();
+    cloud.position.set(placement.x, placement.y, placement.z);
+    cloud.scale.setScalar(placement.size);
     scene.add(cloud);
-    cloud.position.set(-16 + i * 8, 7.5 + (i % 2) * 1.1, -10 - (i % 2) * 3);
-    clouds.push(cloud);
-    for (let j = 0; j < 4; j++) {
+    const puffs = [
+      { radius: 0.78, x: -1.05, y: -0.04 },
+      { radius: 1.02, x: -0.48, y: 0.16 },
+      { radius: 1.16, x: 0.04, y: 0.23 },
+      { radius: 0.98, x: 0.62, y: 0.13 },
+      { radius: 0.72, x: 1.22, y: -0.07 },
+    ];
+    for (const puffShape of puffs) {
       const puff = sphere(
-        0.7 + (j % 2) * 0.35,
+        puffShape.radius,
         white,
         cloud,
-        j * 0.7,
-        Math.sin(j) * 0.3,
+        puffShape.x,
+        puffShape.y,
         0,
       );
       puff.castShadow = false;
+      puff.receiveShadow = false;
     }
-  }
+    return {
+      group: cloud,
+      size: placement.size,
+      homeX: placement.x,
+      homeY: placement.y,
+      phase: i * 0.9,
+      clearsAt: placement.clearsAt,
+    };
+  });
+  let cloudTargets = clouds.map(() => 1);
+  let cloudsAnimating = false;
   const sun = sphere(1.1, material("#ffe1a0"), scene, 9, 9, -14);
   sun.castShadow = false;
   const pointer = { x: 0, y: 0 },
@@ -415,6 +448,7 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
     branch: "mountain",
     calm: false,
     moving: true,
+    exploration: 0,
   };
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   const resize = () => {
@@ -445,12 +479,22 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
         sleepers[i].position.x = -25 + ((i * 0.95 + elapsed * 1.1) % 52.25);
       for (let i = 0; i < trees.length; i++)
         trees[i].position.x = -25 + ((i * 2.5 + elapsed * 1.1) % 52.5);
-      clouds.forEach((cloud, i) => {
-        cloud.position.x = -19 + ((i * 8 + elapsed * 0.13) % 40);
-        cloud.position.y =
-          7.5 + (i % 2) * 1.1 + Math.sin(elapsed * 0.3 + i) * 0.12;
+      clouds.forEach((cloud) => {
+        cloud.group.position.x = cloud.homeX + Math.sin(elapsed * 0.13 + cloud.phase) * 0.18;
+        cloud.group.position.y = cloud.homeY + Math.sin(elapsed * 0.3 + cloud.phase) * 0.08;
       });
     }
+    cloudsAnimating = false;
+    clouds.forEach((cloud, i) => {
+      const target = cloudTargets[i] ?? 1;
+      const current = cloud.group.scale.x / cloud.size;
+      const next = reduced.matches
+        ? target
+        : current + (target - current) * (1 - Math.exp(-dt * 5));
+      cloud.group.scale.setScalar(cloud.size * next);
+      cloud.group.visible = next > 0.002 || target > 0.002;
+      if (Math.abs(next - target) > 0.002) cloudsAnimating = true;
+    });
     smoke.forEach((puff, i) => {
       const age = (elapsed * 0.45 + i / 7) % 1;
       puff.position.set(-4.25 + age * 2, 2.9 + age * 3.8, 0);
@@ -465,14 +509,14 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
       8 + (reduced.matches ? 0 : parallax.y * 0.5),
       13,
     );
-    camera.lookAt(0, 1.4, 0);
+    camera.lookAt(0.7, 1.4, 0);
     renderer.render(scene, camera);
   }
   function loop(time: number) {
     frame = 0;
     if (disposed || !visible || !onScreen) return;
     render(time);
-    if (options.moving && !reduced.matches)
+    if ((options.moving && !reduced.matches) || cloudsAnimating)
       frame = requestAnimationFrame(loop);
   }
   function schedule() {
@@ -519,6 +563,9 @@ export function createTrainScene(canvas: HTMLCanvasElement): SceneController {
   return {
     update(value) {
       options = value;
+      cloudTargets = clouds.map((cloud) =>
+        cloudScaleAtProgress(value.exploration, cloud.clearsAt, 0.16),
+      );
       const palette = palettes[Math.max(0, Math.min(4, value.station))];
       const strength = value.fog ? 1 : Math.max(0, Math.min(1, value.fogStrength ?? 0));
       const sky = strength > 0 ? "#dce5e3" : palette.sky;

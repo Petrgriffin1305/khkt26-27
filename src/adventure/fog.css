@@ -1,5 +1,17 @@
-.overhead-exploration-fog {
+.overhead-cloud-layer,
+.travel-cloud-cover {
   pointer-events: none;
+}
+
+.cartoon-cloud-shape {
+  fill: #f7f8f1;
+  fill-opacity: 1;
+  stroke: #dbe3d7;
+  stroke-width: 2;
+  stroke-opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 650ms cubic-bezier(0.18, 0.8, 0.28, 1);
 }
 
 .overhead-exploration-progress {
@@ -90,7 +102,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .overhead-exploration-fog {
+  .cartoon-cloud-shape {
     transition: none;
   }
 }

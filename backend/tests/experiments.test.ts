@@ -63,6 +63,52 @@ describe("public trip history projections", () => {
     expect(csv).not.toContain(session.userId);
   });
 
+  it("records planned rest separately and completes against study wallbudget", () => {
+    const completed = experimentRecord({
+      ...session,
+      started: 1000,
+      ended: 661000,
+      target: 600,
+      breakPlan: { count: 1, seconds: 60 },
+      segments: [
+        { start: 1000, end: 301000, kind: "focus" },
+        { start: 301000, end: 361000, kind: "break" },
+        { start: 361000, end: 661000, kind: "focus" },
+      ],
+      seconds: 600,
+    }, "server-secret");
+    const early = experimentRecord({
+      ...session,
+      started: 1000,
+      ended: 331000,
+      target: 600,
+      breakPlan: { count: 1, seconds: 60 },
+      segments: [
+        { start: 1000, end: 301000, kind: "focus" },
+        { start: 301000, end: 331000, kind: "break" },
+      ],
+      seconds: 300,
+    }, "server-secret");
+
+    expect(completed).toMatchObject({
+      elapsedSeconds: 660,
+      studyElapsedSeconds: 600,
+      breakSeconds: 60,
+      plannedBreakSeconds: 60,
+      completed: true,
+    });
+    expect(early).toMatchObject({
+      elapsedSeconds: 330,
+      studyElapsedSeconds: 300,
+      breakSeconds: 30,
+      plannedBreakSeconds: 60,
+      completed: false,
+    });
+    expect(experimentCsv([completed])).toContain("study_elapsed_seconds");
+    expect(experimentCsv([completed])).toContain("planned_break_seconds");
+    expect(experimentCsv([completed])).toContain("break_seconds");
+  });
+
   it("publishes only the coarse device category and labels legacy records as missing", () => {
     const current = experimentRecord({ ...session, deviceCategory: "tablet" }, "server-secret");
     const legacy = experimentRecord(session, "server-secret");

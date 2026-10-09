@@ -1,5 +1,5 @@
 import type { QuizAssessment, QuizFeedback } from "../../backend/src/adventure/quizAssessment";
-import type { Session } from "../../backend/src/adventure/domain";
+import { breakElapsedSeconds as scheduledBreakElapsedSeconds, type Session } from "../../backend/src/adventure/domain.ts";
 import type { ActiveTrip } from "./focus";
 
 export type MaterialInfo = NonNullable<ActiveTrip["materials"]>[number];
@@ -11,6 +11,8 @@ export type KnowledgeGap = {
 };
 export type SessionAnalysis = {
   elapsedSeconds: number;
+  studyElapsedSeconds: number;
+  breakSeconds: number;
   focusedSeconds: number;
   focusPercent: number | null;
   distractions: number;
@@ -47,13 +49,21 @@ export function analyzeSession(session: Session): SessionAnalysis {
   const elapsedSeconds = Number.isFinite(session.started) && Number.isFinite(session.ended)
     ? Math.max(0, (session.ended - session.started) / 1000)
     : 0;
+  const recordedBreakSeconds = session.segments.reduce(
+    (sum, segment) => sum + (segment.kind === "break" ? Math.max(0, (segment.end - segment.start) / 1000) : 0),
+    0,
+  );
+  const breakSeconds = session.breakPlan
+    ? scheduledBreakElapsedSeconds(session.started, session.target, session.breakPlan, session.ended)
+    : recordedBreakSeconds;
+  const studyElapsedSeconds = Math.max(0, elapsedSeconds - breakSeconds);
   const recordedFocus = Number.isFinite(session.seconds) ? Math.max(0, session.seconds) : 0;
-  const focusedSeconds = Math.min(elapsedSeconds, recordedFocus);
-  const focusPercent = elapsedSeconds > 0
-    ? Math.min(100, (focusedSeconds / elapsedSeconds) * 100)
+  const focusedSeconds = Math.min(studyElapsedSeconds, recordedFocus);
+  const focusPercent = studyElapsedSeconds > 0
+    ? Math.min(100, (focusedSeconds / studyElapsedSeconds) * 100)
     : null;
   const distractions = distractionCount(session);
-  const focusContext = `Trong chuyến ${elapsedContext(elapsedSeconds)}, ghi nhận ${distractions} lần rời phiên.`;
+  const focusContext = `Trong ${elapsedContext(studyElapsedSeconds)} tính cả thời gian rời phiên, ghi nhận ${distractions} lần rời phiên.`;
   const interruptionReminder = distractions > 0
     ? " Bạn có thể thử tắt thông báo trước chuyến tiếp theo."
     : "";
@@ -92,6 +102,8 @@ export function analyzeSession(session: Session): SessionAnalysis {
 
   return {
     elapsedSeconds,
+    studyElapsedSeconds,
+    breakSeconds,
     focusedSeconds,
     focusPercent,
     distractions,

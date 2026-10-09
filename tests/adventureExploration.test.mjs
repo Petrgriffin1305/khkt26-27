@@ -1,22 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explorationProgress, revealedRadius, revealedStationIndex } from '../src/adventure/exploration.ts';
+import { cloudScaleAtProgress, explorationProgress, journeyExplorationFraction, revealedStationIndex, sceneryShouldMove } from '../src/adventure/exploration.ts';
 import { mapGeometry, stopIndices } from '../src/adventure/mapGeometry.ts';
 
 const journey = (values = {}) => ({ station: 0, remaining: 0, threshold: 100, ...values });
-
-test('the unexplored scene is foggy from the start and clears with focused progress', () => {
-  assert.equal(revealedRadius(0, 600), 35);
-  assert.equal(revealedRadius(300, 600), 50);
-  assert.equal(revealedRadius(600, 600), 65);
-  assert.equal(revealedRadius(900, 600), 65);
-});
-
-test('fog cannot reveal extra scenery from negative or invalid time', () => {
-  assert.equal(revealedRadius(-10, 600), 35);
-  assert.equal(revealedRadius(300, 0), 35);
-  assert.equal(revealedRadius(NaN, 600), 35);
-});
 
 test('map exploration adds only valid focused draft seconds to durable journey progress', () => {
   assert.deepEqual(explorationProgress(journey(), 25, 60), {
@@ -61,4 +48,27 @@ test('invalid progress fields and away/non-finite drafts do not unlock unexplore
   assert.deepEqual(explorationProgress(journey({ station: 1, remaining: NaN, threshold: 60 }), -10, 60), {
     station: 1, fraction: 0, remainingSeconds: 0, thresholdSeconds: 60,
   });
+});
+
+test('focus exploration fraction includes durable journey progress and valid draft time', () => {
+  assert.equal(journeyExplorationFraction(journey({ station: 1, remaining: 25 }), 25, 60), 0.375);
+  assert.equal(journeyExplorationFraction(journey({ station: 2, remaining: 50, threshold: 60 }), 80, 120), 1);
+  assert.equal(journeyExplorationFraction(journey(), -5, 60), 0);
+});
+
+test('clouds stay opaque until approach, shrink at the frontier, and never reappear', () => {
+  assert.equal(cloudScaleAtProgress(0.2, 0.5, 0.2), 1);
+  assert.ok(Math.abs(cloudScaleAtProgress(0.4, 0.5, 0.2) - 0.5) < 1e-12);
+  assert.equal(cloudScaleAtProgress(0.5, 0.5, 0.2), 0);
+  assert.equal(cloudScaleAtProgress(0.9, 0.5, 0.2), 0);
+  assert.equal(cloudScaleAtProgress(Number.NaN, 0.5, 0.2), 1);
+});
+
+test('scheduled breaks keep the train scene still while focus and reconnect animate', () => {
+  assert.equal(sceneryShouldMove(undefined), true);
+  assert.equal(sceneryShouldMove('focus'), true);
+  assert.equal(sceneryShouldMove('reconnecting'), true);
+  assert.equal(sceneryShouldMove('break'), false);
+  assert.equal(sceneryShouldMove('away'), false);
+  assert.equal(sceneryShouldMove('paused'), false);
 });

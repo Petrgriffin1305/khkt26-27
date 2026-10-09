@@ -10,6 +10,7 @@ import {
   MAX_OCR_PAGES_PER_FILE,
   MAX_PDF_PAGES,
   createOcrClient,
+  extractImageWithOcr,
   extractPdfPagesWithOcr,
   inspectImageDimensions,
   renderPdfPageToBlob,
@@ -116,9 +117,9 @@ test('mixed PDFs preserve selectable text and OCR only short or empty pages', as
   const pdf = fakePdf([usefulText, 'Short heading', '', 'Title']);
   const progress = [];
   const { calls, client } = fakeOcrClient(async (_image, { page }) => {
-    if (page === 2) return 'OCR page two';
-    if (page === 3) return 'OCR page three';
-    return '';
+    if (page === 2) return { text: 'OCR page two\npaired meaning', confidence: 82 };
+    if (page === 3) return { text: 'OCR page three', confidence: 42 };
+    return { text: '', confidence: 10 };
   });
 
   const result = await extractPdfPagesWithOcr(pdf, {
@@ -130,12 +131,60 @@ test('mixed PDFs preserve selectable text and OCR only short or empty pages', as
   assert.deepEqual(calls.map(({ page }) => page), [2, 3, 4]);
   assert.ok(result.text.includes(usefulText));
   assert.ok(result.text.includes('Short heading'));
-  assert.ok(result.text.includes('OCR page two'));
+  assert.ok(result.text.includes('OCR page two\npaired meaning'));
   assert.ok(result.text.includes('OCR page three'));
   assert.ok(result.text.includes('Title'), 'short selectable text remains if OCR returns no text');
   assert.deepEqual(pdf.visitedPages, [1, 2, 3, 4]);
+  assert.equal(result.source, 'mixed');
+  assert.equal(result.quality, 'needs-review');
+  assert.equal(result.confidence, 62);
   assert.ok(progress.some((event) => event.phase === 'rendering' && event.page === 2));
   assert.ok(progress.some((event) => event.phase === 'extracting' && event.totalPages === 4));
+});
+
+test('selectable PDF text preserves line boundaries and remains distinguishable from OCR', async () => {
+  const pdf = fakePdf(['']);
+  pdf.getPage = async () => ({
+    async getTextContent() {
+      return { items: [
+        { str: '1. conserve', transform: [1, 0, 0, 1, 40, 700], hasEOL: true },
+        { str: 'bảo tồn nghĩa của từ và ghi nhớ cách dùng', transform: [1, 0, 0, 1, 40, 680], hasEOL: true },
+      ] };
+    },
+    cleanup() {},
+  });
+  const result = await extractPdfPagesWithOcr(pdf, {
+    renderPage() { assert.fail('selectable text must not be OCRed'); },
+    createOcrClient() { assert.fail('selectable text must not load OCR'); },
+  });
+  assert.match(result.text, /1\. conserve\nbảo tồn nghĩa/iu);
+  assert.equal(result.source, 'embedded-text');
+  assert.equal(result.quality, undefined);
+  assert.equal(result.confidence, undefined);
+});
+
+test('image OCR returns the original lines, confidence, and a mandatory review marker', async () => {
+  const fixture = fileURLToPath(new URL('./fixtures/high-contrast-vietnamese-english.png', import.meta.url));
+  const { text, confidence, source, quality } = await extractImageWithOcr(
+    new Uint8Array(await readFile(fixture)),
+    { createOcrClient: () => ({
+      async recognize() { return { text: 'term one\nnghĩa thứ nhất\nterm two\nnghĩa thứ hai', confidence: 31 }; },
+      terminate() {},
+    }) },
+  );
+  assert.equal(text, 'term one\nnghĩa thứ nhất\nterm two\nnghĩa thứ hai');
+  assert.equal(confidence, 31);
+  assert.equal(source, 'local-ocr');
+  assert.equal(quality, 'needs-review');
+
+  const apparentlyClear = await extractImageWithOcr(
+    new Uint8Array(await readFile(fixture)),
+    { createOcrClient: () => ({
+      async recognize() { return { text: 'term\nmeaning', confidence: 99 }; },
+      terminate() {},
+    }) },
+  );
+  assert.equal(apparentlyClear.quality, 'needs-review', 'confidence alone never verifies OCR text');
 });
 
 test('a zero remaining text budget does not create OCR or render a page', async () => {
@@ -152,19 +201,21 @@ test('a zero remaining text budget does not create OCR or render a page', async 
   assert.deepEqual(pdf.visitedPages, []);
 });
 
-test('PDF page and OCR caps retain completed text and report truncation', async () => {
-  const scanned = fakePdf(Array.from({ length: MAX_OCR_PAGES_PER_FILE + 2 }, () => ''));
+test('PDF and OCR work are capped at 20 pages while retaining completed text', async () => {
+  assert.equal(MAX_PDF_PAGES, 20);
+  assert.equal(MAX_OCR_PAGES_PER_FILE, 20);
+  const scanned = fakePdf(Array.from({ length: MAX_PDF_PAGES + 2 }, () => ''));
   const { calls, client } = fakeOcrClient(async (_image, { page }) => `Recognized scanned page ${page}`);
   const limitedOcr = await extractPdfPagesWithOcr(scanned, {
     async renderPage(page) { return page.pageNumber; },
     createOcrClient: () => client,
   });
 
-  assert.equal(calls.length, MAX_OCR_PAGES_PER_FILE);
+  assert.equal(calls.length, MAX_PDF_PAGES);
   assert.equal(limitedOcr.truncated, true);
-  assert.match(limitedOcr.message, /OCR đã dừng sau 20 trang/iu);
-  assert.match(limitedOcr.text, /Recognized scanned page 20/);
-  assert.doesNotMatch(limitedOcr.text, /Recognized scanned page 21/);
+  assert.match(limitedOcr.message, /Đã đọc được 20 trang đầu/iu);
+  assert.match(limitedOcr.text, new RegExp(`Recognized scanned page ${MAX_PDF_PAGES}`));
+  assert.doesNotMatch(limitedOcr.text, new RegExp(`Recognized scanned page ${MAX_PDF_PAGES + 1}`));
 
   const overlongPdf = fakePdf(Array.from({ length: MAX_PDF_PAGES + 1 }, (_, index) =>
     `Searchable page ${index + 1} contains enough selectable text to avoid OCR.`));
@@ -175,8 +226,8 @@ test('PDF page and OCR caps retain completed text and report truncation', async 
 
   assert.equal(overlongPdf.visitedPages.length, MAX_PDF_PAGES);
   assert.equal(pageCapped.truncated, true);
-  assert.match(pageCapped.text, /Searchable page 100/);
-  assert.doesNotMatch(pageCapped.text, /Searchable page 101/);
+  assert.match(pageCapped.text, new RegExp(`Searchable page ${MAX_PDF_PAGES}`));
+  assert.doesNotMatch(pageCapped.text, new RegExp(`Searchable page ${MAX_PDF_PAGES + 1}`));
 });
 
 test('a timed out PDF page keeps earlier selectable text and destroys the parser', async () => {
@@ -251,6 +302,23 @@ test('OCR worker initialization and recognition have a terminating wall-clock li
   client.terminate();
 });
 
+test('OCR worker result messages preserve recognized confidence and line breaks', async () => {
+  const listeners = new Map();
+  const worker = {
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    removeEventListener(type) { listeners.delete(type); },
+    postMessage() {},
+    terminate() {},
+  };
+  const client = createOcrClient({ workerFactory: () => worker, timeoutMs: 500 });
+  const resultPromise = client.recognize(new Blob(['image']), { page: 1, totalPages: 1 });
+  listeners.get('message')({ data: {
+    type: 'result', id: 1, text: 'vocabulary\nnghĩa tiếng Việt', confidence: 27,
+  } });
+  assert.deepEqual(await resultPromise, { text: 'vocabulary\nnghĩa tiếng Việt', confidence: 27 });
+  client.terminate();
+});
+
 test('local OCR reads Vietnamese and English from the bundled trained data', { timeout: 120_000 }, async () => {
   await prepareMaterialWorker();
   const worker = await createWorker(['eng', 'vie'], 1, {
@@ -260,6 +328,8 @@ test('local OCR reads Vietnamese and English from the bundled trained data', { t
   const fixture = fileURLToPath(new URL('./fixtures/high-contrast-vietnamese-english.png', import.meta.url));
   try {
     const { data } = await worker.recognize(fixture);
+    assert.ok(Number.isFinite(data.confidence), 'Tesseract returns a page confidence score');
+    assert.ok(data.confidence >= 0 && data.confidence <= 100);
     assert.match(data.text, /Ga Khởi đầu.*Đồng cỏ Gió/u);
     assert.match(data.text, /Thời gian tập trung: 25 phút/u);
     assert.match(data.text, /English line: Read, notice, and record three ideas\./u);

@@ -43,6 +43,10 @@ vi.mock("../src/gemini.js", () => ({
   }]),
 }));
 import { generateGeminiQuiz } from "../src/gemini.js";
+vi.mock("../src/materialReading.js", () => ({
+  readMaterialDocument: vi.fn().mockResolvedValue({text: "[Trang 1]\nCater for: phục vụ, đáp ứng"}),
+}));
+import { readMaterialDocument } from "../src/materialReading.js";
 const pg = new PGlite();
 const server = new PGLiteSocketServer({
   db: pg,
@@ -119,6 +123,18 @@ beforeEach(async () => {
   await redis.flushall();
   await db.$executeRaw`DELETE FROM tester_runs`;
   await db.$executeRaw`UPDATE adventure_state SET state = '{"people":{},"groups":{},"sessions":{},"invites":{}}'::jsonb WHERE id = 1`;
+});
+
+it("authenticates AI file reading, validates the upload and forwards caller cancellation", async () => {
+  const payload = {mimeType: "application/pdf", data: Buffer.from("%PDF-1.7\nfixture").toString("base64")};
+  vi.mocked(readMaterialDocument).mockClear();
+  expect((await app.inject({method: "POST", url: "/api/v1/materials/read", payload})).statusCode).toBe(401);
+  expect((await app.inject({method: "POST", url: "/api/v1/materials/read", headers, payload: {...payload,data: Buffer.from("unreadable").toString("base64")}})).statusCode).toBe(400);
+  expect(readMaterialDocument).not.toHaveBeenCalled();
+  const response = await app.inject({method: "POST", url: "/api/v1/materials/read", headers, payload});
+  expect(response.statusCode).toBe(200);
+  expect(response.json().text).toContain("Cater for");
+  expect(readMaterialDocument).toHaveBeenCalledWith(payload, expect.any(AbortSignal));
 });
 
 it("automatically publishes all stored trips with live quiz scores and private identifiers removed", async () => {
