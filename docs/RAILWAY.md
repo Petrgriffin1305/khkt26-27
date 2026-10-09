@@ -1,6 +1,8 @@
 # Deploy Viễn Du to Railway
 
-The root Dockerfile builds the Vite web app and Fastify API into one service. The API serves the built web files, binds to Railway's `PORT` on `0.0.0.0`, and exposes `/health` for Railway's health check. The image runs database migrations and seeds the topic bank before starting the API.
+The root Dockerfile builds the Vite web app and Fastify API into one service. Railway can detect this Dockerfile at the repository root without a Config-as-code file. The API serves the built web files, binds to `PORT` on `0.0.0.0`, and exposes `/health`. The image runs database migrations and seeds the topic bank before starting the API.
+
+`railway.json` is retained for compatibility with existing Railway Config-as-code projects. Do not rely on Railway applying it to a new service: the [current Railway infrastructure-as-code guide](https://docs.railway.com/infrastructure-as-code) says new services cannot opt in, and legacy `railway.json` support ends December 1, 2026. Use the dashboard settings below for a new service.
 
 ## Create the backing services
 
@@ -23,11 +25,13 @@ The launcher requires a PostgreSQL `DATABASE_URL`, a `redis://` or `rediss://` `
 
 ## Configure and deploy the service
 
-Set Railway's **Root Directory** to `/` so the service builds from the repository root. In the previously frontend-only service, clear any custom **Build Command** and **Start Command**. Old commands such as `npm run build:web` or `npm run preview` bypass the root Dockerfile and its API server. `railway.json` selects the Dockerfile, and the image starts with `npm start`.
+Set Railway's **Root Directory** to `/` so the service builds from the repository root. Railway should detect the root `Dockerfile`; clear any custom **Build Command** and **Start Command** left by a frontend-only deployment. In particular, remove `npm ci --include=dev && npm run build:web` and `npm run preview -- --host 0.0.0.0 --port $PORT`; those commands bypass the image's API server. With the overrides cleared, Railway builds the Dockerfile and uses its `npm start` command.
+
+In the service's **Variables**, set `PORT=8080` to match the existing domain configuration. Under **Deploy** settings, set the health check path to `/health`, the timeout to `300` seconds, the restart policy to `ON_FAILURE`, and maximum retries to `10`.
 
 The Docker build leaves `VITE_API_URL` blank by default so the web app calls the API on the same origin. If you host the web app separately, set the Railway build variable `VITE_API_URL` to `https://YOUR-API-DOMAIN/api/v1` and rebuild. This value is public and embedded in the web bundle; never put secrets in a `VITE_` variable.
 
-Railway supplies `PORT`. The launcher sets `HOST=0.0.0.0`, `NODE_ENV=production`, and `WEB_DIST_DIR=dist`. `STORAGE_DRIVER=disabled` is the default for this deployment, so document parsing stays in the browser and no S3 bucket or credentials are required. If you explicitly configure another storage driver, the launcher preserves it.
+The launcher sets `HOST=0.0.0.0`, `NODE_ENV=production`, and `WEB_DIST_DIR=dist`; it uses the configured `PORT`. `STORAGE_DRIVER=disabled` is the default for this deployment, so document parsing stays in the browser and no S3 bucket or credentials are required. If you explicitly configure another storage driver, the launcher preserves it.
 
 Optionally add `GEMINI_API_KEY` as a secret variable on the Viễn Du service to enable AI-generated quizzes. Keep it server-side; never set it as `VITE_GEMINI_API_KEY`. Static quizzes work without it.
 
