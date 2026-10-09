@@ -4,6 +4,9 @@ import { useAuthStore } from "@/store/authStore";
 import { post, request, REGISTRATION_PASSWORD_HINT } from "@/services/api";
 import { Scene } from "./Scene";
 import { JourneyView } from "./JourneyView";
+import { detectDeviceCategory } from "./device";
+import { explorationProgress } from "./exploration";
+import type { MaterialExtractionProgress } from "./materialExtraction";
 import { DurationPicker } from "./DurationPicker";
 import { ExperimentResults } from "./ExperimentResults";
 import { QuizPanel } from "./QuizPanel";
@@ -106,6 +109,9 @@ function AdventureWorkspace() {
     [topic, setTopic] = useState("biology"),
     [documentText, setDocumentText] = useState("");
   const [materials, setMaterials] = useState<MaterialInfo[]>([]);
+  const [materialProgress, setMaterialProgress] = useState<(MaterialExtractionProgress & { file: string }) | null>(null);
+  const materialRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => { materialRequest.current?.abort(); }, [view]);
   const [minutes, setMinutes] = useState(25),
     [mode, setMode] = useState<"solo" | "group">("solo");
   const [carriageName, setCarriageName] = useState(""),
@@ -381,7 +387,14 @@ function AdventureWorkspace() {
   const data = saved.snapshot;
   const carriage = data?.person;
   const group = data?.group;
-  const journey = mode === "group" && group ? group.journey : carriage?.journey;
+  const pendingSoloSeconds = saved.pending.filter(session => !session.groupId &&
+    session.userId === owner && !data?.sessions.some(stored => stored.id === session.id))
+    .reduce((total, session) => total + session.seconds, 0);
+  const pendingSoloProgress = explorationProgress(carriage?.journey, pendingSoloSeconds);
+  const personalJourney = carriage?.journey && pendingSoloSeconds > 0
+    ? { ...carriage.journey, station: pendingSoloProgress.station, remaining: pendingSoloProgress.remainingSeconds }
+    : carriage?.journey;
+  const journey = mode === "group" && group ? group.journey : personalJourney;
   const trainCars =
     mode === "group" && group
       ? group.members
@@ -399,6 +412,9 @@ function AdventureWorkspace() {
   const active = saved.active
     ? tick(saved.active, Math.max(now, saved.active.lastAt))
     : null;
+  // Group contributions need server confirmation of membership and the daily cap.
+  const mapActive = active && !(mode === "group" && group) && active.groupId === null ? active : null;
+  const mapProgress = explorationProgress(journey, mapActive ? focused(mapActive) : 0, mapActive?.target);
   const sessions = [...saved.pending, ...(data?.sessions ?? [])];
   const summarySession = summary
     ? sessions.find((session) => session.id === summary.id) ?? summary
@@ -424,6 +440,7 @@ function AdventureWorkspace() {
   }
   function start() {
     if (
+      busy || materialRequest.current ||
       !loaded ||
       !exclusive ||
       current.current.active ||
@@ -442,6 +459,7 @@ function AdventureWorkspace() {
       document: documentText,
       materials,
       target: minutes * 60,
+      deviceCategory: detectDeviceCategory(navigator.userAgent, navigator.maxTouchPoints),
       groupId: mode === "group" && group ? group.id : null,
       started: at,
       lastAt: at,
@@ -473,6 +491,7 @@ function AdventureWorkspace() {
       contribution: 0,
       rules: "train-v1",
       distractions: next.distractions ?? 0,
+      deviceCategory: next.deviceCategory,
     };
     const value = structuredClone(current.current);
     value.active = null;
@@ -525,19 +544,35 @@ function AdventureWorkspace() {
     downloadData(JSON.stringify(current.current, null, 2), "vien-du-backup.json");
   }
   async function importMaterials(files: File[]) {
-    if (!files.length) return;
+    if (!files.length || busy || materialRequest.current || !workspaceLive.current || view !== "ticket") return;
     if (files.length > 10 || materials.length + files.length > 10) {
       setError("Mỗi chuyến tối đa 10 tài liệu. Hãy gộp nội dung hoặc bắt đầu chuyến mới.");
       return;
     }
-    await run(async () => {
+    const id = owner;
+    const controller = new AbortController();
+    materialRequest.current = controller;
+    const isCurrent = () => workspaceLive.current && ownerRef.current === id &&
+      materialRequest.current === controller && !controller.signal.aborted;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
       const { extractMaterialFile } = await import("./materialExtraction");
+      if (!isCurrent()) return;
       let text = documentText;
       const imported: MaterialInfo[] = [];
       for (const file of files) {
+        if (!isCurrent()) return;
+        setMaterialProgress({ file: file.name, phase: "loading", progress: 0 });
         const header = `\n\n--- ${file.name} ---\n`;
         const remaining = Math.max(0, 50000 - text.length - header.length);
-        const result = await extractMaterialFile(file, { maxTextChars: remaining });
+        const result = await extractMaterialFile(file, {
+          maxTextChars: remaining,
+          signal: controller.signal,
+          onProgress: (progress) => { if (isCurrent()) setMaterialProgress({ file: file.name, ...progress }); },
+        });
+        if (!isCurrent()) return;
         const { name, size, type, status, message } = result;
         imported.push({ name, size, type, status, message });
         if (result.text) text += header + result.text;
@@ -545,7 +580,17 @@ function AdventureWorkspace() {
       setDocumentText(text);
       setMaterials((current) => [...current, ...imported]);
       setNotice("Đã kiểm tra tài liệu trên thiết bị. Chỉ nội dung trong ô ghi chú được gửi khi bạn chọn tạo quiz AI.");
-    });
+    } catch (e) {
+      if (isCurrent()) setError(e instanceof Error ? e.message : "Không đọc được tài liệu.");
+    } finally {
+      if (materialRequest.current === controller) {
+        materialRequest.current = null;
+        if (workspaceLive.current && ownerRef.current === id) {
+          setMaterialProgress(null);
+          setBusy(false);
+        }
+      }
+    }
   }
   function exportRawData() {
     try {
@@ -971,7 +1016,15 @@ function AdventureWorkspace() {
                           }}
                         />
                       </label>
-                      <p className="material-hint">Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), PDF, OpenDocument và văn bản. Tối đa 20 MB/tệp, 10 tệp/chuyến, 50.000 ký tự. Tệp chưa hỗ trợ đọc vẫn hiển thị tên và báo trạng thái.</p>
+                      <p className="material-hint">Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), PDF, OpenDocument và văn bản. OCR đọc tiếng Việt và tiếng Anh từ PDF quét, ảnh PNG/JPG/WebP/BMP ngay trên thiết bị. Tối đa 20 MB/tệp, 10 tệp/chuyến, 50.000 ký tự; ảnh tối đa 20 megapixel, PDF tối đa 100 trang được đọc và 20 trang dùng OCR. Tệp chưa hỗ trợ đọc vẫn hiển thị tên và báo trạng thái.</p>
+                      {materialProgress && <div className="material-progress">
+                        <p role="status"><strong>{materialProgress.file}</strong><br/>
+                          {{ loading: "Đang nạp bộ đọc", recognizing: "Đang nhận diện chữ (OCR)", rendering: "Đang dựng trang", extracting: "Đang đọc văn bản" }[materialProgress.phase]}
+                          {materialProgress.page != null && ` · Trang ${materialProgress.page}${materialProgress.totalPages ? `/${materialProgress.totalPages}` : ""}`}
+                        </p>
+                        <progress aria-label="Tiến độ đọc tài liệu" max={1} value={materialProgress.progress} />
+                        <button onClick={() => materialRequest.current?.abort()}>Hủy đọc tài liệu</button>
+                      </div>}
                       {!!materials.length && <ul className="material-list" aria-label="Tài liệu đã chọn">{materials.map((file, i) => <li key={`${i}:${file.name}`}>
                         <strong>{file.name}</strong><span>{(file.size / 1024).toFixed(1)} KB · {file.message}</span>
                       </li>)}</ul>}
@@ -1002,7 +1055,7 @@ function AdventureWorkspace() {
                       <div className="info-box">
                         <h3>Hỗ trợ tập trung</h3>
                         <p>Mọi chuyến đã lưu, kể cả chuyến kết thúc sớm, sẽ tự công khai trong Lịch sử chuyến đi:
-                          mã ẩn danh, chủ đề, tóm tắt mục tiêu, thời gian, số lần xao nhãng và điểm quiz.
+                          mã ẩn danh, chủ đề, tóm tắt mục tiêu, thời gian, loại thiết bị, số lần xao nhãng và điểm quiz.
                           Email tài khoản, tài liệu, lời giải và chi tiết trả lời được giữ riêng.</p>
                         <p>
                           Khi bạn rời cửa sổ, đồng hồ vẫn tiếp tục nhưng khoảng đó được ghi là
@@ -1022,6 +1075,7 @@ function AdventureWorkspace() {
                       <button
                         className="primary"
                         disabled={
+                          busy ||
                           !!active ||
                           goal.trim().length < 3 ||
                           !Number.isInteger(minutes) ||
@@ -1079,7 +1133,7 @@ function AdventureWorkspace() {
                         journey={
                           active.groupId && group?.id === active.groupId
                             ? group.journey
-                            : carriage?.journey
+                            : personalJourney
                         }
                         carriages={
                           active.groupId && group?.id === active.groupId
@@ -1096,11 +1150,12 @@ function AdventureWorkspace() {
                         decor={carriage?.decor}
                         fog={active.state === "away"}
                         calm
-                        draftSeconds={focused(active)}
+                        draftSeconds={active.groupId ? 0 : focused(active)}
                         targetSeconds={active.target}
                         focusState={active.state}
                         reconnect={active.reconnect}
                       />
+                      {active.groupId && <p className="overhead-hint">Bản đồ đoàn mở thêm vùng sau khi máy chủ xác nhận phần đóng góp của phiên này.</p>}
                       <div className="focus-controls">
                         {now < active.lastAt && <div className="info-box">
                           <p>Đồng hồ thiết bị đang chạy lùi. Hãy đặt lại giờ đúng để tiếp tục; dữ liệu phiên vẫn được giữ.</p>
@@ -1156,34 +1211,38 @@ function AdventureWorkspace() {
                     carriages={trainCars}
                     ownId={owner}
                     decor={carriage?.decor}
+                    draftSeconds={mapActive ? focused(mapActive) : 0}
+                    targetSeconds={mapActive?.target}
                   />
+                  {mode === "group" && group && <p className="overhead-hint">Bản đồ đoàn dùng tiến độ đã được máy chủ xác nhận, gồm giới hạn đóng góp mỗi ngày.</p>}
+                  {mode === "solo" && pendingSoloSeconds > 0 && <p className="overhead-hint">Vùng đã học được giữ trên thiết bị; các phiên đang chờ đồng bộ sẽ được máy chủ xác nhận khi có mạng.</p>}
                   <div className="station-list">
                     {stations.map((s, i) => (
                       <article
                         key={s}
-                        className={`station-stop ${i <= (journey?.station ?? 0) ? "unlocked" : ""}`}
+                        className={`station-stop ${i <= mapProgress.station ? "unlocked" : ""}`}
                       >
                         <span className="station-number">
-                          {i <= (journey?.station ?? 0) ? "✓" : `0${i + 1}`}
+                          {i <= mapProgress.station ? "✓" : "?"}
                         </span>
                         <div>
                           <small>
-                            {i === (journey?.station ?? 0)
+                            {i === mapProgress.station
                               ? "BẠN ĐANG Ở ĐÂY"
-                              : i < (journey?.station ?? 0)
+                              : i < mapProgress.station
                                 ? "ĐÃ KHÁM PHÁ"
                                 : "CHƯA MỞ"}
                           </small>
-                          <h2>{s}</h2>
+                          <h2>{i <= mapProgress.station ? s : "Vùng chưa khám phá"}</h2>
                           <p>
-                            {i <= (journey?.station ?? 0)
+                            {i <= mapProgress.station
                               ? stories[i]
                               : "Học thêm để mở cảnh quan và câu chuyện ở trạm này."}
                           </p>
                         </div>
-                        {i === (journey?.station ?? 0) && (
+                        {i === mapProgress.station && (
                           <strong>
-                            {Math.floor((journey?.remaining ?? 0) / 60)} phút
+                            {Math.floor(mapProgress.remainingSeconds / 60)} phút
                             tích lũy
                           </strong>
                         )}
@@ -1710,7 +1769,7 @@ function AdventureWorkspace() {
                     </section>
                     <section className="panel experiment-share">
                       <h2>Chuyến đi trong lịch sử công khai</h2>
-                      <p>Mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm
+                      <p>Mã chuyến ẩn danh, thời gian, loại thiết bị, tóm tắt mục tiêu, số lần xao nhãng và điểm
                         được tự cập nhật. Chuyến kết thúc sớm cũng được ghi nhận.</p>
                       <p role="status">{owner === "guest"
                         ? saved.guestPublished?.includes(summarySession.id)
@@ -1876,7 +1935,7 @@ function AdventureWorkspace() {
                       bạn bấm tạo quiz. Dữ liệu học của tài khoản được lưu trên
                       máy chủ; đoàn chỉ xem toa và tiến độ chung.
                     </p>
-                    <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, chủ đề, thời gian, tóm tắt mục tiêu,
+                    <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, chủ đề, thời gian, loại thiết bị, tóm tắt mục tiêu,
                       số lần xao nhãng và điểm quiz trong Lịch sử chuyến đi, gồm cả chuyến kết thúc sớm.
                       Phiên offline xuất hiện sau khi gửi thành công. Email tài khoản, tên tài khoản,
                       tài liệu, lời giải và chi tiết trả lời không xuất hiện trong lịch sử công khai.</p>

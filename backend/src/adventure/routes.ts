@@ -5,7 +5,7 @@ import { z } from "zod";
 import { ApiError } from "../errors.js";
 import { config } from "../config.js";
 import { experimentRecord } from "../experiments.js";
-import { journey, person, settle, snapshot, type World } from "./domain.js";
+import { DEVICE_CATEGORIES, journey, person, settle, snapshot, type World } from "./domain.js";
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const text = z.string().trim().min(1).max(60);
@@ -17,6 +17,7 @@ const sessionSchema = z.object({
   started: z.number().int().nonnegative(),
   ended: z.number().int().nonnegative(),
   target: z.number().int().min(60).max(14400),
+  deviceCategory: z.enum(DEVICE_CATEGORIES).optional(),
   distractions: z.number().int().min(0).max(10000).optional(),
   segments: z
     .array(

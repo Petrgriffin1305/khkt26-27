@@ -1,10 +1,14 @@
 {
   "name": "viendu",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/vie": "1.0.0",
     "officeparser": "8.1.1",
+    "pdfjs-dist": "6.2.108",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "tesseract.js": "7.0.0",
     "three": "^0.186.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zustand": "^5.0.15"

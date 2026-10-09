@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { Journey } from "../../backend/src/adventure/domain";
 import { Scene } from "./Scene";
 import { TopDownMap } from "./TopDownMap";
-import { TopDownScene } from "./TopDownScene";
 import type { ActiveTrip } from "./focus";
 import { revealedRadius } from "./exploration";
 
@@ -17,7 +16,7 @@ export function JourneyView({
   initial = "3d",
   focusState,
   reconnect = 0,
-  targetSeconds = 0,
+  targetSeconds,
 }: {
   journey?: Journey;
   carriages: { id: string; name: string; color: string }[];
@@ -54,15 +53,12 @@ export function JourneyView({
         </button>
       </div>
       {camera === "2d" ? (
-        focusState ? <TopDownScene carriages={carriages} ownId={ownId}
-          running={focusState === "focus" || focusState === "reconnecting"}
-          fogStrength={.12 + .75 * Math.min(1, Math.max(0, reconnect / 120))}
-          revealRadius={revealedRadius(draftSeconds, targetSeconds)}
-          coast={journey?.branch === "coast"}/> : <TopDownMap
+        <TopDownMap
           journey={journey}
           carriages={carriages}
           ownId={ownId}
           draftSeconds={draftSeconds}
+          targetSeconds={targetSeconds}
         />
       ) : (
         <Scene
@@ -72,7 +68,11 @@ export function JourneyView({
           decor={decor}
           fog={fog}
           fogStrength={fog ? 1 : Math.min(1, Math.max(0, reconnect / 120))}
-          revealRadius={focusState ? revealedRadius(draftSeconds, targetSeconds) : undefined}
+          revealRadius={
+            focusState && targetSeconds !== undefined
+              ? revealedRadius(draftSeconds, targetSeconds)
+              : undefined
+          }
           calm={calm}
           running={!focusState || focusState === "focus" || focusState === "reconnecting"}
           station={journey?.station}

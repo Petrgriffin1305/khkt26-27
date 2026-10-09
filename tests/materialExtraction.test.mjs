@@ -9,6 +9,11 @@ import { pathToFileURL } from 'node:url';
 import { extractMaterialFile, materialExtractionErrorMessage, MAX_FILE_BYTES, MAX_TEXT_CHARS } from '../src/material/extractMaterialFile.mjs';
 import { prepareMaterialWorker } from '../scripts/prepare-material-worker.mjs';
 
+test('distinguishes local OCR worker failures from PDF reader failures', () => {
+  assert.equal(materialExtractionErrorMessage(new Error('Local OCR worker failed.')),
+    'Không tải được bộ nhận diện chữ OCR trên thiết bị. Hãy tải lại ứng dụng rồi thử lại.');
+});
+
 const encoder = new TextEncoder();
 
 function crc32(bytes) {
@@ -170,18 +175,18 @@ test('extracts PDF text with the local PDF.js worker', async (t) => {
   const previousGlobals = Object.fromEntries(['DOMMatrix', 'ImageData', 'Path2D'].map((key) => [key, globalThis[key]]));
   Object.assign(globalThis, { DOMMatrix: canvas.DOMMatrix, ImageData: canvas.ImageData, Path2D: canvas.Path2D });
   try {
-    const worker = path.resolve('node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+    const worker = path.resolve('node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs');
     const result = await extractMaterialFile(
-      file('lesson.pdf', pdfFixture('PDF attachment knowledge phrase')),
+      file('lesson.pdf', pdfFixture('PDF attachment knowledge phrase with enough searchable text for this test')),
       { pdfWorkerSrc: pathToFileURL(worker).href },
     );
     assert.equal(result.status, 'extracted', result.message);
-    assert.match(result.text, /PDF attachment knowledge phrase/);
+    assert.match(result.text, /PDF attachment knowledge phrase with enough searchable text/);
 
     const scan = await extractMaterialFile(file('scanned.pdf', pdfFixture('')),
       { pdfWorkerSrc: pathToFileURL(worker).href });
-    assert.equal(scan.status, 'empty');
-    assert.match(scan.message, /PDF.*ảnh quét.*OCR/iu);
+    assert.equal(scan.status, 'truncated');
+    assert.match(scan.message, /không thể khởi chạy OCR cục bộ/iu);
 
     const invalidPdf = await extractMaterialFile(file('broken.pdf', encoder.encode('not a PDF')),
       { pdfWorkerSrc: pathToFileURL(worker).href });
@@ -207,9 +212,9 @@ test('extracts legacy XLS files with bounded sheet output', async () => {
 });
 
 test('preserves metadata and returns a clear status for unsupported, oversized, or empty input', async () => {
-  const unsupported = await extractMaterialFile(file('scan.png', new Uint8Array([0x89, 0x50, 0x4e, 0x47])));
+  const unsupported = await extractMaterialFile(file('scan.gif', new Uint8Array([0x47, 0x49, 0x46, 0x38])));
   assert.equal(unsupported.status, 'metadata-only');
-  assert.equal(unsupported.name, 'scan.png');
+  assert.equal(unsupported.name, 'scan.gif');
   assert.equal(unsupported.text, '');
   assert.match(unsupported.message, /chưa trích xuất được nội dung/iu);
 
@@ -271,23 +276,60 @@ test('caps extracted text at the requested remaining quiz budget', async () => {
   const cappedAtProductLimit = await extractMaterialFile(file('lesson.txt', encoder.encode('x'.repeat(MAX_TEXT_CHARS + 5))), { maxTextChars: MAX_TEXT_CHARS + 5 });
   assert.equal(cappedAtProductLimit.status, 'truncated');
   assert.equal(cappedAtProductLimit.text.length, MAX_TEXT_CHARS);
+
+  let imageRead = false;
+  const noBudgetImage = await extractMaterialFile({
+    name: 'scan.png',
+    size: 1_000,
+    type: 'image/png',
+    async arrayBuffer() { imageRead = true; return new ArrayBuffer(0); },
+  }, { maxTextChars: 0 });
+  assert.equal(noBudgetImage.status, 'truncated');
+  assert.equal(imageRead, false, 'zero remaining quiz budget must skip OCR image decoding');
 });
 
 test('prepares the matching PDF.js worker as a local same-origin public asset', async () => {
   const projectRoot = await mkdtemp(path.join(tmpdir(), 'viendu-material-worker-'));
   try {
     const officeParserDirectory = path.join(projectRoot, 'node_modules/officeparser');
-    const pdfJsDirectory = path.join(projectRoot, 'node_modules/pdfjs-dist/build');
+    const pdfJsDirectory = path.join(projectRoot, 'node_modules/pdfjs-dist/legacy/build');
+    const tesseractDirectory = path.join(projectRoot, 'node_modules/tesseract.js/dist');
+    const coreDirectory = path.join(projectRoot, 'node_modules/tesseract.js-core');
     await mkdir(officeParserDirectory, { recursive: true });
     await mkdir(pdfJsDirectory, { recursive: true });
+    await mkdir(tesseractDirectory, { recursive: true });
+    await mkdir(coreDirectory, { recursive: true });
     await writeFile(path.join(officeParserDirectory, 'package.json'), JSON.stringify({ dependencies: { 'pdfjs-dist': '6.2.108' } }));
     await writeFile(path.join(projectRoot, 'node_modules/pdfjs-dist/package.json'), JSON.stringify({ version: '6.2.108' }));
+    await writeFile(path.join(projectRoot, 'node_modules/tesseract.js/package.json'), JSON.stringify({ version: '7.0.0' }));
+    await writeFile(path.join(projectRoot, 'node_modules/tesseract.js-core/package.json'), JSON.stringify({ version: '7.0.0' }));
     const source = path.join(pdfJsDirectory, 'pdf.worker.min.mjs');
     await writeFile(source, 'test worker source');
+    await writeFile(path.join(tesseractDirectory, 'worker.min.js'), 'test OCR worker source');
+    const requiredCoreFiles = [
+      'tesseract-core-relaxedsimd-lstm.wasm.js',
+      'tesseract-core-relaxedsimd-lstm.wasm',
+      'tesseract-core-simd-lstm.wasm.js',
+      'tesseract-core-simd-lstm.wasm',
+      'tesseract-core-lstm.wasm.js',
+      'tesseract-core-lstm.wasm',
+    ];
+    for (const name of requiredCoreFiles) await writeFile(path.join(coreDirectory, name), `test ${name}`);
+    for (const language of ['eng', 'vie']) {
+      const languageRoot = path.join(projectRoot, 'node_modules/@tesseract.js-data', language);
+      const bestDataRoot = path.join(languageRoot, '4.0.0_best_int');
+      await mkdir(bestDataRoot, { recursive: true });
+      await writeFile(path.join(languageRoot, 'package.json'), JSON.stringify({ version: '1.0.0' }));
+      await writeFile(path.join(bestDataRoot, `${language}.traineddata.gz`), `${language} local data`);
+    }
 
     const prepared = await prepareMaterialWorker(projectRoot);
     assert.equal(prepared.version, '6.2.108');
     assert.deepEqual(await readFile(prepared.workerDestination), await readFile(source));
+    assert.deepEqual(await readFile(path.join(projectRoot, 'public/ocr/worker.min.js')), Buffer.from('test OCR worker source'));
+    assert.deepEqual(await readFile(path.join(projectRoot, 'public/ocr/core/tesseract-core-simd-lstm.wasm.js')), Buffer.from('test tesseract-core-simd-lstm.wasm.js'));
+    assert.deepEqual(await readFile(path.join(projectRoot, 'public/ocr/lang/vie.traineddata.gz')), Buffer.from('vie local data'));
+    assert.equal(prepared.ocrAssets.length, 1 + requiredCoreFiles.length + 2);
 
     await writeFile(path.join(projectRoot, 'node_modules/pdfjs-dist/package.json'), JSON.stringify({ version: '9.9.9' }));
     await assert.rejects(prepareMaterialWorker(projectRoot), /PDF worker mismatch/);

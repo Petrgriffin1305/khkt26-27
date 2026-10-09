@@ -1,0 +1,96 @@
+.overhead-exploration-fog {
+  pointer-events: none;
+}
+
+.overhead-exploration-progress {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 15px;
+  padding: 12px 14px;
+  border: 1px solid #dce3d6;
+  border-radius: 12px;
+  background: #f7f8f2;
+}
+
+.overhead-exploration-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #42564a;
+  font-size: 12px;
+}
+
+.overhead-exploration-progress > div span,
+.overhead-exploration-progress small {
+  color: #788078;
+}
+
+.overhead-exploration-progress progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  background: #dfe6da;
+  accent-color: #d67b49;
+}
+
+.overhead-exploration-progress progress::-webkit-progress-bar {
+  border-radius: 99px;
+  background: #dfe6da;
+}
+
+.overhead-exploration-progress progress::-webkit-progress-value {
+  border-radius: 99px;
+  background: #d67b49;
+}
+
+.overhead-exploration-progress progress::-moz-progress-bar {
+  border-radius: 99px;
+  background: #d67b49;
+}
+
+.overhead-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overhead-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.fog-legend-known {
+  background: #dceac3;
+  border: 1px solid #9db28b;
+}
+
+.fog-legend-hidden {
+  background: #bdc9b8;
+  border: 1px solid #95a394;
+}
+
+.fog-legend-route {
+  width: 17px !important;
+  height: 4px !important;
+  border-radius: 99px !important;
+  background: #e4a557;
+}
+
+@media (max-width: 600px) {
+  .overhead-exploration-progress > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overhead-exploration-fog {
+    transition: none;
+  }
+}

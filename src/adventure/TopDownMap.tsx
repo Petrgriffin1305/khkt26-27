@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { mapGeometry, stopIndices as stops } from "./mapGeometry";
+import { explorationProgress } from "./exploration";
 import type { Journey } from "../../backend/src/adventure/domain";
+import "./fog.css";
 
 type Carriage = { id: string; name: string; color: string };
 const names = [
@@ -16,30 +18,24 @@ export function TopDownMap({
   carriages,
   ownId,
   draftSeconds = 0,
+  targetSeconds,
 }: {
   journey?: Journey;
   carriages: Carriage[];
   ownId: string;
   draftSeconds?: number;
+  targetSeconds?: number;
 }) {
+  const maskId = `exploration-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [zoom, setZoom] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const { route, distances, total, path, position } = mapGeometry(
     journey?.branch,
   );
-  const stage = Math.max(0, Math.min(4, journey?.station ?? 0));
-  const fraction =
-    stage === 4
-      ? 1
-      : Math.min(
-          1,
-          Math.max(
-            0,
-            ((journey?.remaining ?? 0) + draftSeconds) /
-              Math.max(1, journey?.threshold ?? 1800),
-          ),
-        );
+  const progress = explorationProgress(journey, draftSeconds, targetSeconds);
+  const stage = progress.station;
+  const fraction = progress.fraction;
   const distance =
     distances[stops[stage]] +
     (stage < 4
@@ -108,8 +104,34 @@ export function TopDownMap({
           style={{ width: `${zoom * 100}%`, minWidth: 760 * zoom }}
           viewBox="0 0 1100 650"
           role="group"
-          aria-label={`Tàu có ${carriages.length} toa, đang ở chặng ${names[stage]}`}
+          aria-label={`Bản đồ khám phá: tàu có ${carriages.length} toa, đang ở ${names[stage]}; vùng chưa tới được phủ sương`}
         >
+          <defs>
+            <mask id={`${maskId}-route-mask`} maskUnits="userSpaceOnUse" x="0" y="0" width="1100" height="650">
+              <rect width="1100" height="650" fill="black" />
+              <path d={path} pathLength={total} fill="none" stroke="white" strokeWidth="40"
+                strokeLinejoin="round" strokeDasharray={`${distance} ${Math.max(1, total - distance)}`} />
+            </mask>
+            <radialGradient id={`${maskId}-train-reveal`}>
+              <stop offset="0%" stopColor="black" />
+              <stop offset="72%" stopColor="black" />
+              <stop offset="100%" stopColor="white" />
+            </radialGradient>
+            <mask id={`${maskId}-fog-mask`} maskUnits="userSpaceOnUse" x="0" y="0" width="1100" height="650">
+              <rect width="1100" height="650" fill="white" />
+              <path d={path} pathLength={total} fill="none" stroke="black" strokeWidth="132"
+                strokeLinecap="round" strokeLinejoin="round"
+                strokeDasharray={`${distance} ${Math.max(1, total - distance)}`} />
+              <path d={path} pathLength={total} fill="none" stroke="black" strokeWidth="176"
+                strokeOpacity=".32" strokeLinecap="round" strokeLinejoin="round"
+                strokeDasharray={`${distance} ${Math.max(1, total - distance)}`} />
+              <circle cx={engine.x} cy={engine.y} r="112" fill={`url(#${maskId}-train-reveal)`} />
+              {stops.slice(0, stage + 1).map((stop) => {
+                const [x, y] = route[stop];
+                return <circle key={stop} cx={x} cy={y} r="78" fill="black" />;
+              })}
+            </mask>
+          </defs>
           <rect width="1100" height="650" rx="24" fill="#dceac3" />
           <path
             d="M0 65 Q180 -20 350 70 T710 45 L1100 0 V650 H0Z"
@@ -218,63 +240,71 @@ export function TopDownMap({
               </g>
             ))}
           </g>
-          <text x="40" y="58" className="overhead-region">
-            VIỄN DU · MIỀN BÌNH MINH
-          </text>
-          <text x="85" y="375" className="overhead-region">
-            NÚI MÂY
-          </text>
-          <text x="470" y="465" className="overhead-region">
-            HỒ ÊM
-          </text>
-          <text
-            x="977"
-            y="98"
-            className="overhead-region"
-            transform="rotate(12 977 98)"
-          >
-            BỜ BIỂN
-          </text>
-          <path
-            d={
-              coast
-                ? "M650 140 L430 140 L280 230"
-                : "M650 140 L870 230 L280 230"
-            }
-            fill="none"
-            stroke="#c2aa82"
-            strokeWidth="8"
-            strokeDasharray="8 10"
-            opacity=".7"
+          <g aria-hidden="true">
+            <text x="40" y="58" className="overhead-region">
+              VIỄN DU · MIỀN BÌNH MINH
+            </text>
+            <text x="85" y="375" className="overhead-region">
+              NÚI MÂY
+            </text>
+            <text x="470" y="465" className="overhead-region">
+              HỒ ÊM
+            </text>
+            <text
+              x="977"
+              y="98"
+              className="overhead-region"
+              transform="rotate(12 977 98)"
+            >
+              BỜ BIỂN
+            </text>
+          </g>
+          <rect
+            className="overhead-exploration-fog"
+            width="1100"
+            height="650"
+            fill="#bdc9b8"
+            opacity=".96"
+            mask={`url(#${maskId}-fog-mask)`}
+            aria-hidden="true"
           />
           <path
             d={path}
+            pathLength={total}
             fill="none"
             stroke="#baa88a"
             strokeWidth="23"
             strokeLinejoin="round"
+            strokeDasharray={`${distance} ${Math.max(1, total - distance)}`}
           />
+          <g mask={`url(#${maskId}-route-mask)`} aria-hidden="true">
+            <path
+              d={path}
+              pathLength={total}
+              fill="none"
+              stroke="#816f5d"
+              strokeWidth="29"
+              strokeDasharray="3 13"
+              strokeLinejoin="round"
+            />
+          </g>
           <path
             d={path}
-            fill="none"
-            stroke="#816f5d"
-            strokeWidth="29"
-            strokeDasharray="3 13"
-            strokeLinejoin="round"
-          />
-          <path
-            d={path}
+            pathLength={total}
             fill="none"
             stroke="#f3dfb5"
             strokeWidth="17"
             strokeLinejoin="round"
+            strokeDasharray={`${distance} ${Math.max(1, total - distance)}`}
           />
           <path
             d={path}
+            pathLength={total}
             fill="none"
             stroke="#aac296"
             strokeWidth="7"
             strokeLinejoin="round"
+            strokeDasharray={`${distance} ${Math.max(1, total - distance)}`}
           />
           <path
             d={path}
@@ -283,21 +313,21 @@ export function TopDownMap({
             stroke="#e4a557"
             strokeWidth="7"
             strokeLinejoin="round"
-            strokeDasharray={`${distance} ${total}`}
+            strokeDasharray={`${distance} ${Math.max(1, total - distance)}`}
           />
-          {stops.map((stop, i) => {
+          {stops.slice(0, stage + 1).map((stop, i) => {
             const [x, y] = route[stop];
             return (
               <g
                 key={stop}
-                aria-label={`${names[i]}: ${i <= stage ? "đã mở" : "chưa mở"}`}
+                aria-label={`${names[i]}: đã khám phá`}
               >
                 <circle
                   cx={x}
                   cy={y}
                   r="19"
-                  fill={i <= stage ? "#f6d599" : "#e4e6d6"}
-                  stroke={i <= stage ? "#ae8147" : "#9baf94"}
+                  fill="#f6d599"
+                  stroke="#ae8147"
                   strokeWidth="3"
                 />
                 <text
@@ -326,9 +356,7 @@ export function TopDownMap({
                   fill="#42564a"
                   fontSize="13"
                   fontWeight="700"
-                >
-                  {names[i]}
-                </text>
+                >{names[i]}</text>
               </g>
             );
           })}
@@ -448,9 +476,22 @@ export function TopDownMap({
         <span>
           {stage === 4
             ? "Đã đến đích"
-            : `${Math.round(fraction * 100)}% đến ${names[stage + 1]}`}
+            : `${Math.round(fraction * 100)}% đến trạm kế tiếp`}
         </span>
         <span>Ngã rẽ: {coast ? "Bờ biển" : "Qua núi"}</span>
+      </div>
+      <div className="overhead-exploration-progress">
+        <div>
+          <strong>Tiến độ khám phá</strong>
+          <span>Đã mở {stage + 1}/5 trạm</span>
+        </div>
+        <progress
+          value={Math.min(4, stage + fraction)}
+          max={4}
+          aria-label="Tiến độ khám phá hành trình"
+          aria-valuetext={`${stage + 1} trên 5 trạm đã mở${stage < 4 ? `, ${Math.round(fraction * 100)} phần trăm tới trạm kế tiếp` : ""}`}
+        />
+        <small>{stage === 4 ? "Toàn bộ tuyến đường đã được khám phá." : "Tuyến và cảnh quan phía trước vẫn được che bởi sương."}</small>
       </div>
       <div className="overhead-carriages" aria-label="Danh sách toa tàu">
         {carriages.map((car, i) => (
@@ -481,9 +522,9 @@ export function TopDownMap({
         </p>
       )}
       <div className="overhead-legend">
-        <span>🟠 Đường đã đi</span>
-        <span>⚪ Trạm chưa mở</span>
-        <span>┄ Tuyến còn lại</span>
+        <span><i className="fog-legend-known" /> Vùng đã khám phá</span>
+        <span><i className="fog-legend-hidden" /> Sương che vùng chưa tới</span>
+        <span><i className="fog-legend-route" /> Tuyến đã đi</span>
       </div>
     </section>
   );

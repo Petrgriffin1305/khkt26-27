@@ -62,4 +62,15 @@ describe("public trip history projections", () => {
     expect(csv).not.toContain(session.id);
     expect(csv).not.toContain(session.userId);
   });
+
+  it("publishes only the coarse device category and labels legacy records as missing", () => {
+    const current = experimentRecord({ ...session, deviceCategory: "tablet" }, "server-secret");
+    const legacy = experimentRecord(session, "server-secret");
+
+    expect(current.deviceCategory).toBe("tablet");
+    expect(legacy.deviceCategory).toBeNull();
+    expect(JSON.stringify(current)).not.toContain("userAgent");
+    expect(experimentCsv([current])).toContain("device_category");
+    expect(experimentCsv([current])).toContain('"tablet"');
+  });
 });

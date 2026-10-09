@@ -69,6 +69,15 @@ describe("adventure progress", () => {
     };
     expect(settle(emptyWorld(), legacy, now).distractions).toBe(1);
   });
+  it("persists a device category and keeps the original value on an idempotent replay", () => {
+    const world = emptyWorld();
+    const first = settle(world, { ...input("device-trip"), deviceCategory: "ios" }, now);
+    const replay = settle(world, { ...input("device-trip"), deviceCategory: "pc" }, now);
+
+    expect(first.deviceCategory).toBe("ios");
+    expect(replay.deviceCategory).toBe("ios");
+    expect(snapshot(world, "u", now).sessions[0]?.deviceCategory).toBe("ios");
+  });
   it("carries fractions between sessions instead of rounding each contribution", () => {
     const w = emptyWorld();
     settle(w, input("a", now - 60000, now - 30000), now);

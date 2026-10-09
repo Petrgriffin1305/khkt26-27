@@ -1,4 +1,4 @@
-import type { Segment } from "../../backend/src/adventure/domain";
+import type { DeviceCategory, Segment } from "../../backend/src/adventure/domain";
 
 export type ActiveTrip = {
   id: string;
@@ -17,6 +17,8 @@ export type ActiveTrip = {
   observedAt?: number;
   /** Number of distinct departures from the focus session, including zero-length ones. */
   distractions?: number;
+  /** Captured at trip start; absent on trips saved by older versions. */
+  deviceCategory?: DeviceCategory;
 };
 
 export function focused(s: ActiveTrip): number {

@@ -27,6 +27,15 @@ test('blur, visibility, pagehide, and route departure record one distraction', (
   ]);
 });
 
+test('captured device category survives focus ticks, departure, and reload restoration', () => {
+  const captured = { ...trip(), deviceCategory: 'ios' };
+  const saved = tick(depart(captured, 11000), 21000);
+  const restored = restore(saved, 61000);
+
+  assert.equal(saved.deviceCategory, 'ios');
+  assert.equal(restored.deviceCategory, 'ios');
+});
+
 test('the wall clock continues while away while focused time remains separate', () => {
   const away = depart(trip(), 11000);
   const elapsed = tick(away, 61000);

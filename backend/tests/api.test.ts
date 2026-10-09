@@ -189,6 +189,8 @@ it("accepts validated guest trips once, strips spoofed data, and rejects owner U
       { start: started, end: started + 20000, kind: "focus" },
       { start: started + 20000, end: ended, kind: "distraction" },
     ],
+    deviceCategory: "tablet",
+    userAgent: "RAW-UA-SHOULD-NOT-BE-STORED",
     userId, seconds: 9999, quiz: { score: 999, total: 999 }, materials: ["https://private.example/file"],
   };
   const first = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions", payload });
@@ -199,21 +201,28 @@ it("accepts validated guest trips once, strips spoofed data, and rejects owner U
   const originalTripCode = first.json().tripCode;
 
   const retry = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
-    payload: { ...payload, goal: "Changed replay goal", seconds: 0 } });
+    payload: { ...payload, goal: "Changed replay goal", seconds: 0, deviceCategory: "ios" } });
   expect(retry.statusCode).toBe(200);
   expect(retry.json()).toEqual({ tripCode: originalTripCode });
 
   const published = await app.inject({ url: "/api/v1/experiments" });
   expect(published.json()).toMatchObject({ total: 1, runs: [{ tripCode: originalTripCode,
     goalSummary: "Guest first goal", focusedSeconds: 20, elapsedSeconds: 30, distractions: 1,
-    completed: false, quizScore: null, quizTotal: null }] });
+    completed: false, quizScore: null, quizTotal: null, deviceCategory: "tablet" }] });
   expect(published.body).not.toContain(id);
   expect(published.body).not.toContain(userId);
   expect(published.body).not.toContain("private.example");
-  const state = await db.$queryRaw<{ state: { sessions: Record<string, { userId: string; groupId: string | null; seconds: number; quiz?: unknown }> } }[]>`
+  const state = await db.$queryRaw<{ state: { sessions: Record<string, { userId: string; groupId: string | null; seconds: number; deviceCategory?: string; quiz?: unknown }> } }[]>`
     SELECT state FROM adventure_state WHERE id = 1`;
   expect(state[0].state.sessions[id]).toMatchObject({ userId: `guest:${id}`, groupId: null, seconds: 20 });
+  expect(state[0].state.sessions[id].deviceCategory).toBe("tablet");
+  expect(JSON.stringify(state[0].state.sessions[id])).not.toContain("RAW-UA-SHOULD-NOT-BE-STORED");
   expect(state[0].state.sessions[id].quiz).toBeUndefined();
+
+  const invalidDeviceId = randomUUID();
+  const invalidDevice = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
+    payload: { ...payload, id: invalidDeviceId, deviceCategory: "MacIntel; touch=5" } });
+  expect(invalidDevice.statusCode).toBe(400);
 
   const invalidId = randomUUID();
   const invalid = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
@@ -226,6 +235,9 @@ it("accepts validated guest trips once, strips spoofed data, and rejects owner U
     payload: { ...payload, id: collisionId, groupId: null, userId: undefined, seconds: undefined,
       quiz: undefined, materials: undefined } });
   expect(accountTrip.statusCode).toBe(200);
+  const accountState = await db.$queryRaw<{ state: { sessions: Record<string, { deviceCategory?: string }> } }[]>`
+    SELECT state FROM adventure_state WHERE id = 1`;
+  expect(accountState[0].state.sessions[collisionId].deviceCategory).toBe("tablet");
   const collision = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
     payload: { ...payload, id: collisionId } });
   expect(collision.statusCode).toBe(409);

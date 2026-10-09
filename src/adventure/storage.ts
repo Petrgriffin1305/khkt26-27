@@ -1,4 +1,5 @@
 import type { ActiveTrip } from "./focus";
+import { isDeviceCategory } from "./device.ts";
 import { isValidQuizAssessment, isValidQuizDraftMap, type QuizDraft } from "./quizDrafts.ts";
 import {
   emptyWorld,
@@ -53,6 +54,7 @@ function validSegments(v: unknown) {
 function validSession(v: unknown) {
   return record(v) && typeof v.id === "string" && typeof v.userId === "string" &&
     typeof v.goal === "string" && typeof v.topic === "string" &&
+    (v.deviceCategory === undefined || isDeviceCategory(v.deviceCategory)) &&
     (v.distractions === undefined || count(v.distractions)) &&
     (v.quiz === undefined || isValidQuizAssessment(v.quiz)) &&
     [v.started, v.ended, v.target, v.seconds, v.contribution].every(number) && validSegments(v.segments);
@@ -77,6 +79,7 @@ function validSaved(v: unknown): v is Saved {
     if (!record(a) || ![a.started, a.lastAt, a.target, a.reconnect].every(number) ||
         Number(a.target) <= 0 || ![a.id, a.owner, a.goal, a.topic, a.document].every((s) => typeof s === "string") ||
         !["focus", "away", "reconnecting", "paused", "pending"].includes(String(a.state)) ||
+        (a.deviceCategory !== undefined && !isDeviceCategory(a.deviceCategory)) ||
         (a.distractions !== undefined && !count(a.distractions)) ||
         !validSegments(a.segments) || !validMaterials(a.materials)) return false;
   }

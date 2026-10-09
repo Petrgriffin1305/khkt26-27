@@ -1,5 +1,7 @@
 import type { QuizAssessment } from "./quizAssessment.js";
 export const RULES = "train-v1";
+export const DEVICE_CATEGORIES = ["pc", "ios", "android", "tablet", "unknown"] as const;
+export type DeviceCategory = (typeof DEVICE_CATEGORIES)[number];
 export type Segment = {
   start: number;
   end: number;
@@ -50,6 +52,8 @@ export type Session = {
   rules: string;
   /** Distinct departures from focus, including departures shorter than one millisecond. */
   distractions?: number;
+  /** Coarse category captured when the trip began; absent on legacy trips. */
+  deviceCategory?: DeviceCategory;
   quiz?: QuizAssessment;
 };
 export type World = {

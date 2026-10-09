@@ -21,6 +21,7 @@ export function experimentRecord(session: Session, secret: string) {
     goalSummary: goalSummary(session.goal), topic: session.topic,
     targetSeconds: session.target, elapsedSeconds, focusedSeconds: session.seconds,
     distractions: session.distractions ?? session.segments.filter(segment => segment.kind === "distraction").length,
+    deviceCategory: session.deviceCategory ?? null,
     completed: elapsedSeconds >= session.target,
     quizScore: session.quiz?.score ?? null, quizTotal: session.quiz?.total ?? null,
     startedAt: new Date(session.started).toISOString(), endedAt: new Date(session.ended).toISOString(),
@@ -30,11 +31,11 @@ export function experimentRecord(session: Session, secret: string) {
 
 export function experimentCsv(rows: ReturnType<typeof experimentRecord>[]) {
   const headers = ["trip_code", "tester_code", "goal_summary", "topic", "started_at", "ended_at",
-    "target_seconds", "elapsed_seconds", "focused_seconds", "distractions", "timer_completed", "quiz_score", "quiz_total"];
+    "target_seconds", "elapsed_seconds", "focused_seconds", "distractions", "device_category", "timer_completed", "quiz_score", "quiz_total"];
   const cell = (value: unknown) => `"${String(value ?? "").replace(/^\s*[=+@-]/, "'$&").replaceAll('"', '""')}"`;
   return '\uFEFF' + [headers.join(","), ...rows.map(row => [row.tripCode, row.testerCode, row.goalSummary,
     row.topic, row.startedAt, row.endedAt, row.targetSeconds, row.elapsedSeconds, row.focusedSeconds,
-    row.distractions, row.completed, row.quizScore, row.quizTotal].map(cell).join(","))].join("\r\n");
+    row.distractions, row.deviceCategory, row.completed, row.quizScore, row.quizTotal].map(cell).join(","))].join("\r\n");
 }
 
 export function experimentRoutes(app: FastifyInstance, db: PrismaClient) {
