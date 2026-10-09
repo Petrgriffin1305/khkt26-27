@@ -10,16 +10,12 @@ Use Node.js 24 LTS and npm 11, matching GitHub Actions. npm 10 may reject the lo
 npm ci
 npm --prefix backend ci
 npm --prefix backend run db:generate
-npm --prefix backend run dev:local
-```
-
-In another terminal, start Viễn Du:
-
-```bash
 npm start
 ```
 
-`npm start` serves the app at `http://localhost:8084` and requires that exact port. `npm run dev` and `npm run web` do the same thing. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and the quiz bank. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
+`npm start` starts the local API/database and the web app at `http://localhost:8084` together. `npm run dev` and `npm run web` do the same thing. Healthy existing Viễn Du services are reused; occupied unrelated ports produce an actionable error. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and the quiz bank. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
+
+The countdown keeps running when you leave a study session. Each departure is counted once as a distraction; returning resumes immediately. **Kết quả tester** shows explicitly shared, anonymous session metrics and exports CSV for experiments. Testers publish or withdraw individual sessions from their summary; private goals, emails, and documents are not published.
 
 ## Preview a production web build
 
@@ -32,6 +28,8 @@ npm run preview
 
 The production files are written to `dist/`. See [web and Windows operations](docs/WEB_DESKTOP.md) for production hosting details.
 
+For a single-service Railway deployment that serves both the web app and API, follow the [Railway setup guide](docs/RAILWAY.md).
+
 ## Package the Windows app
 
 ```bash
@@ -40,7 +38,7 @@ npm --prefix desktop ci
 npm --prefix desktop run package:win
 ```
 
-The Windows installer is in `desktop/release/`. Set `VITE_API_URL` in the root `.env` or build environment for an online backend. GitHub Actions builds the installer and a ZIP of the web app on pushes to `main`; download them from the `Vien-Du-Windows` artifact in the **Build Windows app** workflow.
+The Windows installer is in `desktop/release/`. For a local desktop build, set `VITE_API_URL` in the root `.env` or build environment for an online backend. GitHub Actions defaults to `https://viendu.up.railway.app/api/v1`; the repository variable `VITE_API_URL` can override it. Actions builds the installer and a ZIP of the web app on pushes to `main`; download them from the `Vien-Du-Windows` artifact in the **Build Windows app** workflow.
 
 To launch the desktop build locally after creating `dist/` and installing desktop dependencies, run this separately. It stays open until you close the Electron app:
 

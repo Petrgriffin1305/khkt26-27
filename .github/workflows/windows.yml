@@ -24,7 +24,7 @@ jobs:
         env:
           # Leave headroom for the large OfficeParser browser dependency.
           NODE_OPTIONS: --max-old-space-size=4096
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://viendu.up.railway.app/api/v1' }}
       - run: npm ci --prefix desktop
       - run: npm --prefix desktop run typecheck
       - run: npm --prefix desktop test

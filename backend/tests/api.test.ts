@@ -1,5 +1,8 @@
 import { beforeAll, afterAll, beforeEach, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -9,6 +12,7 @@ import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/app.js";
 import { issueTokens, hashToken } from "../src/auth.js";
 import { config } from "../src/config.js";
+import { registerWebAssets } from "../src/webAssets.js";
 vi.mock("../src/storage.js", () => ({
   uploadFile: vi.fn().mockResolvedValue({}),
   deleteFile: vi.fn().mockResolvedValue({}),
@@ -78,6 +82,7 @@ beforeAll(async () => {
     ),
   );
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261007000000_adventure/migration.sql", import.meta.url), "utf8"));
+  await pg.exec(readFileSync(new URL("../prisma/migrations/20261009000000_tester_runs/migration.sql", import.meta.url), "utf8"));
   await server.start();
   app = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
   await app.ready();
@@ -111,7 +116,43 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   await redis.flushall();
+  await db.$executeRaw`DELETE FROM tester_runs`;
   await db.$executeRaw`UPDATE adventure_state SET state = '{"people":{},"groups":{},"sessions":{},"invites":{}}'::jsonb WHERE id = 1`;
+});
+
+it("publishes only confirmed own tester metrics, keeps private fields hidden, and refreshes quiz scores", async () => {
+  const id = randomUUID(), ended = Date.now(), started = ended - 60000;
+  const save = await app.inject({ method: "POST", url: "/api/v1/adventure/sessions", headers,
+    payload: { id, groupId: null, goal: "Private learning goal", topic: "biology", target: 60,
+      started, ended, distractions: 2, segments: [{ start: started, end: ended - 20000, kind: "focus" },
+        { start: ended - 20000, end: ended, kind: "distraction" }] } });
+  expect(save.statusCode).toBe(200);
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(0);
+  expect((await app.inject({ method: "POST", url: "/api/v1/experiments", payload: { sessionId: id } })).statusCode).toBe(401);
+  expect((await app.inject({ method: "POST", url: "/api/v1/experiments", headers: stranger, payload: { sessionId: id } })).statusCode).toBe(404);
+  const publish = await app.inject({ method: "POST", url: "/api/v1/experiments", headers,
+    payload: { sessionId: id, completionPercent: 75, focusedSeconds: 9999, quizScore: 999 } });
+  expect(publish.statusCode).toBe(200);
+  const publicList = await app.inject({ url: "/api/v1/experiments" });
+  expect(publicList.json()).toMatchObject({ total: 1, runs: [{ focusedSeconds: 40, elapsedSeconds: 60,
+    distractions: 2, completionPercent: 75, quizScore: null }] });
+  for (const privateValue of ["owner@example.com", userId, "Private learning goal", id]) expect(publicList.body).not.toContain(privateValue);
+  const grade = await app.inject({ method: "POST", url: "/api/v1/adventure/quiz", headers,
+    payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] } });
+  expect(grade.statusCode).toBe(200);
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().runs[0]).toMatchObject({ quizScore: 1, quizTotal: 1 });
+  const csv = await app.inject({ url: "/api/v1/experiments/export.csv" });
+  expect(csv.headers["content-type"]).toContain("text/csv");
+  expect(csv.body).toContain("self_reported_completion_percent");
+  expect(csv.body).not.toContain(userId);
+  await app.inject({ method: "DELETE", url: `/api/v1/experiments/${id}`, headers: stranger });
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(1);
+  await app.inject({ method: "DELETE", url: `/api/v1/experiments/${id}`, headers });
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(0);
+  expect((await app.inject({ url: "/api/v1/experiments/mine", headers })).json()).toEqual([]);
+  for (let i = 0; i < 2; i++) await app.inject({ method: "POST", url: "/api/v1/experiments", headers, payload: { sessionId: id } });
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(1);
+  expect((await app.inject({ url: "/api/v1/experiments/mine", headers })).json()).toEqual([{ sessionId: id }]);
 });
 afterAll(async () => {
   await app?.close();
@@ -541,6 +582,41 @@ it("checks dependency readiness", async () => {
     redis: "up",
     s3: "up",
   });
+});
+
+it("serves web and account creation together in production without requiring document storage", async () => {
+  const previous = { mode: config.NODE_ENV, storage: config.STORAGE_DRIVER };
+  const directory = await mkdtemp(join(tmpdir(), "viendu-production-test-"));
+  const storageProbe = vi.fn().mockRejectedValue(new Error("S3 is not configured"));
+  let productionApp: Awaited<ReturnType<typeof buildApp>> | undefined;
+  try {
+    config.NODE_ENV = "production";
+    config.STORAGE_DRIVER = "disabled";
+    await writeFile(join(directory, "index.html"), "<html>Viễn Du</html>");
+    productionApp = await buildApp({ db, redis: redis as unknown as Redis, storageHealth: storageProbe, logger: false });
+    await registerWebAssets(productionApp, directory);
+    const web = await productionApp.inject("/");
+    expect(web.statusCode).toBe(200);
+    expect(web.headers["content-security-policy"]).toContain("script-src 'self'");
+    const health = await productionApp.inject("/health");
+    expect(health.statusCode).toBe(200);
+    expect(health.json().services).toEqual({ database: "up", redis: "up", document_storage: "disabled" });
+    expect(storageProbe).not.toHaveBeenCalled();
+    const account = { email: `railway-${randomUUID()}@example.com`, name: "Railway test", password: "TestOnly!123" };
+    const registration = await productionApp.inject({ method: "POST", url: "/api/v1/auth/register", payload: account });
+    expect(registration.statusCode).toBe(201);
+    expect(registration.headers["content-type"]).toContain("application/json");
+    const login = await productionApp.inject({ method: "POST", url: "/api/v1/auth/login", payload: account });
+    expect(login.statusCode).toBe(200);
+    const me = await productionApp.inject({ url: "/api/v1/users/me", headers: { authorization: `Bearer ${login.json().tokens.access_token}` } });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().email).toBe(account.email);
+  } finally {
+    config.NODE_ENV = previous.mode;
+    config.STORAGE_DRIVER = previous.storage;
+    await productionApp?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 it("authenticates websocket events and tracks the focus lifecycle", async () => {

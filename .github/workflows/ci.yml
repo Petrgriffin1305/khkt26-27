@@ -31,3 +31,5 @@ jobs:
           # Leave headroom for the large OfficeParser browser dependency.
           NODE_OPTIONS: --max-old-space-size=4096
       - run: docker build -t pomodoro-api backend
+      - name: Build the Railway web and API image
+        run: docker build -t viendu-railway .

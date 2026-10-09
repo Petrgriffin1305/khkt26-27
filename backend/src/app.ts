@@ -1,4 +1,5 @@
 import { adventureRoutes } from "./adventure/routes.js";
+import { experimentRoutes } from "./experiments.js";
 import { localRead, verifyLocalUrl } from "./localStorage.js";
 import { Metrics } from "./metrics.js";
 import Fastify, { type FastifyRequest } from "fastify";
@@ -236,6 +237,7 @@ export async function buildApp(deps?: {
       );
   };
   adventureRoutes(app, db, authenticate);
+  experimentRoutes(app, db, authenticate);
   const authLimits = { rateLimit: { max: 10, timeWindow: "1 minute" } };
   if (config.STORAGE_DRIVER === "local")
     app.get("/files/:id", async (req, reply) => {
@@ -293,14 +295,15 @@ export async function buildApp(deps?: {
     const checks = await Promise.allSettled([
       db.$queryRaw`SELECT 1`,
       redis.ping(),
-      (deps?.storageHealth ?? storageHealth)(),
+      config.STORAGE_DRIVER === "disabled" ? Promise.resolve() : (deps?.storageHealth ?? storageHealth)(),
     ]);
     const services = Object.fromEntries(
       [
         "database",
         "redis",
-        config.STORAGE_DRIVER === "local" ? "local_storage" : "s3",
-      ].map((k, i) => [k, checks[i].status === "fulfilled" ? "up" : "down"]),
+        config.STORAGE_DRIVER === "local" ? "local_storage" : config.STORAGE_DRIVER === "disabled" ? "document_storage" : "s3",
+      ].map((k, i) => [k, i === 2 && config.STORAGE_DRIVER === "disabled"
+        ? "disabled" : checks[i].status === "fulfilled" ? "up" : "down"]),
     );
     const healthy = checks.every((c) => c.status === "fulfilled");
     return reply.code(healthy ? 200 : 503).send({

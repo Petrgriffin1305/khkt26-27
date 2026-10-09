@@ -12,7 +12,8 @@ export const config = z
       .enum(["development", "test", "staging", "production"])
       .default("development"),
     CORS_ORIGIN: z.string().default("http://localhost:8081"),
-    STORAGE_DRIVER: z.enum(["s3", "local"]).default("s3"),
+    STORAGE_DRIVER: z.enum(["s3", "local", "disabled"]).default("s3"),
+    WEB_DIST_DIR: z.string().trim().min(1).optional(),
     LOCAL_STORAGE_DIR: z.string().default(".local-data/files"),
     PUBLIC_API_ORIGIN: z.url().default("http://localhost:3000"),
     S3_BUCKET: z.string().min(1).default("pomodoro-documents"),
@@ -25,6 +26,7 @@ export const config = z
     OPENAI_MODEL: z.string().default("gpt-4.1-mini"),
     GEMINI_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().min(1).default("gemini-3.8-flash"),
+    GEMINI_FALLBACK_MODEL: z.string().trim().default("gemini-3.5-flash-lite"),
     GOOGLE_CLIENT_ID: z.string().optional(),
     APPLE_CLIENT_ID: z.string().optional(),
   })
