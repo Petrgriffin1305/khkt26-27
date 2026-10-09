@@ -15,7 +15,7 @@ npm start
 
 `npm start` starts the local API/database and the web app at `http://localhost:8084` together. `npm run dev` and `npm run web` do the same thing. Healthy existing Viễn Du services are reused; occupied unrelated ports produce an actionable error. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and the quiz bank. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
 
-The countdown keeps running when you leave a study session. Each departure is counted once as a distraction; returning resumes immediately. **Kết quả tester** shows explicitly shared, anonymous session metrics and exports CSV for experiments. Testers publish or withdraw individual sessions from their summary; private goals, emails, and documents are not published.
+The countdown keeps running when you leave a study session. Each departure is counted once as a distraction; returning resumes immediately. **Lịch sử chuyến đi** automatically shows every saved trip, including trips ended early, with a unique anonymous trip code, start/end times, a short goal summary, duration, distraction count, and the latest server-graded quiz score. Account trips appear after synchronization; guest trips upload automatically when connected, keeping their local progress separate. Emails, account identifiers, and study documents are not published. CSV exports the latest 10,000 trips for experiments.
 
 ## Preview a production web build
 

@@ -5,7 +5,9 @@ import { post, request, REGISTRATION_PASSWORD_HINT } from "@/services/api";
 import { Scene } from "./Scene";
 import { JourneyView } from "./JourneyView";
 import { DurationPicker } from "./DurationPicker";
-import { ExperimentResults, ExperimentShare } from "./ExperimentResults";
+import { ExperimentResults } from "./ExperimentResults";
+import { permanentGuestFailure, publishGuestSessions, type GuestPublicationStatus } from "./guestPublication";
+import { GuestHistorySync } from "./GuestHistorySync";
 import { studyTopics } from "./topics";
 import {
   depart,
@@ -52,7 +54,7 @@ const nav = [
   { id: "carriage", icon: "▣", label: "Toa của tôi" },
   { id: "group", icon: "♧", label: "Đoàn tàu" },
   { id: "journal", icon: "▤", label: "Nhật ký học tập" },
-  { id: "experiments", icon: "◎", label: "Kết quả tester" },
+  { id: "experiments", icon: "◎", label: "Lịch sử chuyến đi" },
 ];
 const clock = (seconds: number) =>
   `${Math.floor(Math.max(0, seconds) / 60)
@@ -82,7 +84,7 @@ export default function AdventureApp() {
     void bootstrap();
   }, [bootstrap]);
   if (!ready) return <div className="adventure empty">Đang mở hành trình…</div>;
-  return <AdventureWorkspace key={user?.id ?? "guest"} />;
+  return <><GuestHistorySync accountId={user?.id} /><AdventureWorkspace key={user?.id ?? "guest"} /></>;
 }
 function AdventureWorkspace() {
   const [requestedView, setView] = useBrowserView();
@@ -93,6 +95,8 @@ function AdventureWorkspace() {
   const [saved, setSaved] = useState<Saved>(emptySaved);
   const current = useRef(saved),
     ownerRef = useRef(owner);
+  const workspaceLive = useRef(false);
+  const [guestPublication, setGuestPublication] = useState<Record<string, GuestPublicationStatus>>({});
   const hasActiveTrip = Boolean(saved.active);
   const [loaded, setLoaded] = useState(false),
     [exclusive, setExclusive] = useState(false);
@@ -180,6 +184,7 @@ function AdventureWorkspace() {
           if (owner === "guest")
             value.snapshot = snapshot(value.local, owner, Date.now());
           if (commitRef.current(value)) {
+            workspaceLive.current = true;
             setLoaded(true);
             setExclusive(true);
           }
@@ -195,6 +200,7 @@ function AdventureWorkspace() {
     );
     return () => {
       disposed = true;
+      workspaceLive.current = false;
       release?.();
     };
   }, [owner]);
@@ -307,8 +313,28 @@ function AdventureWorkspace() {
     if (needsLogin) return Promise.reject(new Error("Đăng nhập lại để đồng bộ. Phiên và dữ liệu cục bộ vẫn được giữ."));
     if (syncing.current) return syncing.current;
     const id = ownerRef.current;
-    if (id === "guest") return Promise.resolve();
     syncing.current = (async () => {
+      if (id === "guest") {
+        const isCurrent = () => workspaceLive.current && ownerRef.current === id;
+        while (isCurrent()) {
+          const unpublished = Object.values(current.current.local.sessions).filter(session =>
+            session.userId === "guest" && !current.current.guestPublished?.includes(session.id));
+          if (!unpublished.length) return;
+          await publishGuestSessions({
+            sessions: unpublished,
+            publishedIds: current.current.guestPublished ?? [],
+            isCurrent,
+            continueAfterFailure: permanentGuestFailure,
+            send: session => post<{ tripCode: string }>("/adventure/guest-sessions", session, false),
+            markPublished: sessionId => commit({ ...current.current,
+              guestPublished: [...new Set([...(current.current.guestPublished ?? []), sessionId])] }),
+            onStatus: status => setGuestPublication(value => ({ ...value, [status.sessionId]: status })),
+          });
+          // Stop on a failed request/save; retain unacknowledged trips for the next retry.
+          if (unpublished.some(session => !current.current.guestPublished?.includes(session.id))) return;
+        }
+        return;
+      }
       while (current.current.pending.length) {
         const session = current.current.pending[0];
         const result = await post<Snapshot>("/adventure/sessions", session);
@@ -331,8 +357,16 @@ function AdventureWorkspace() {
     return syncing.current;
   }
   useEffect(() => {
-    if (!loaded || owner === "guest" || !online || needsLogin) return;
+    if (!loaded || !exclusive || !online || needsLogin) return;
     let disposed = false;
+    if (owner === "guest") {
+      const retry = () => { void sync().catch(e => {
+          if (!disposed) setError(e instanceof Error ? e.message : "Chưa gửi được chuyến vào lịch sử.");
+        }); };
+      retry();
+      const interval = setInterval(retry, 60000);
+      return () => { disposed = true; clearInterval(interval); };
+    }
     void sync()
       .then(() =>
         request<{ topics: { id: string; name: string }[] }>("/topics"),
@@ -351,7 +385,7 @@ function AdventureWorkspace() {
     };
     // Sync on sign-in and reconnection; explicit refresh is also available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, owner, online, needsLogin]);
+  }, [loaded, exclusive, owner, online, needsLogin]);
   const data = saved.snapshot;
   const carriage = data?.person;
   const group = data?.group;
@@ -463,7 +497,7 @@ function AdventureWorkspace() {
       setAnswers({});
       setRevealed(false);
       go("summary");
-      if (user && online) void run(sync);
+      if (online) void run(sync);
     }
   }
   useEffect(() => {
@@ -929,6 +963,9 @@ function AdventureWorkspace() {
                       </p>
                       <div className="info-box">
                         <h3>Hỗ trợ tập trung</h3>
+                        <p>Mọi chuyến đã lưu sẽ tự công khai trong Lịch sử chuyến đi: mã ẩn danh,
+                          thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm quiz sau khi hoàn tất.
+                          Email tài khoản và nội dung tài liệu học được giữ riêng.</p>
                         <p>
                           Khi bạn rời cửa sổ, đồng hồ vẫn tiếp tục nhưng khoảng đó được ghi là
                           xao nhãng và không cộng vào thời gian học. Khi quay lại, phiên tiếp
@@ -1679,7 +1716,30 @@ function AdventureWorkspace() {
                         </div>
                       )}
                     </section>
-                    <ExperimentShare key={summary.id} sessionId={summary.id} canPublish={Boolean(user) && !needsLogin} sync={sync} />
+                    <section className="panel experiment-share">
+                      <h2>Chuyến đi trong lịch sử công khai</h2>
+                      <p>Mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm quiz
+                        được tự cập nhật. Chuyến kết thúc sớm cũng được ghi nhận.</p>
+                      <p role="status">{owner === "guest"
+                        ? saved.guestPublished?.includes(summary.id)
+                          ? "Chuyến đã xuất hiện trong Lịch sử chuyến đi."
+                          : guestPublication[summary.id]?.status === "save-failed"
+                            ? "Máy chủ đã ghi nhận chuyến; thiết bị chưa lưu được xác nhận. Gửi lại sẽ không tạo chuyến trùng."
+                            : guestPublication[summary.id]?.status === "sending"
+                              ? "Đang gửi chuyến vào lịch sử…"
+                              : guestPublication[summary.id]?.status === "failed"
+                                ? `Chuyến vẫn được lưu trên thiết bị. ${guestPublication[summary.id].message}`
+                                : "Chuyến đã lưu trên thiết bị và sẽ xuất hiện khi gửi thành công."
+                        : needsLogin ? "Đăng nhập lại để đồng bộ chuyến vào lịch sử."
+                          : saved.pending.some(session => session.id === summary.id)
+                            ? "Chuyến đang chờ đồng bộ lên máy chủ."
+                            : "Chuyến đã xuất hiện trong Lịch sử chuyến đi."}</p>
+                      <div className="choice-row">
+                        <button onClick={() => go("experiments")}>Xem Lịch sử chuyến đi →</button>
+                        {(owner === "guest" ? !saved.guestPublished?.includes(summary.id) : saved.pending.some(session => session.id === summary.id)) &&
+                          <button disabled={busy || !online || needsLogin} onClick={() => void run(sync)}>Thử đồng bộ lại</button>}
+                      </div>
+                    </section>
                     <button className="primary" onClick={() => go("station")}>
                       Trở về ga chính →
                     </button>
@@ -1824,9 +1884,14 @@ function AdventureWorkspace() {
                       bạn bấm tạo quiz. Dữ liệu học của tài khoản được lưu trên
                       máy chủ; đoàn chỉ xem toa và tiến độ chung.
                     </p>
+                    <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu,
+                      số lần xao nhãng và điểm quiz trong Lịch sử chuyến đi, gồm cả chuyến kết thúc sớm.
+                      Phiên offline xuất hiện sau khi gửi thành công. Email tài khoản, tên tài khoản
+                      và nội dung tài liệu không xuất hiện trong lịch sử công khai.</p>
                     <p>
-                      Ở chế độ khách, dữ liệu thuộc trình duyệt này. Xuất bản
-                      sao trước khi xóa dữ liệu trình duyệt.
+                      Ở chế độ khách, tiến độ và tài liệu được giữ trong trình duyệt này;
+                      kết quả chuyến được gửi tự động vào lịch sử công khai khi có mạng.
+                      Xuất bản sao trước khi xóa dữ liệu trình duyệt.
                     </p>
                     <p>Tên tài khoản gần nhất được giữ trên thiết bị để mở lại phiên offline. Đăng xuất sẽ xóa thông tin này; mật khẩu và token không được lưu lâu dài.</p>
                   </div>

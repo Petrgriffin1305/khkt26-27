@@ -3,6 +3,8 @@ import type { PrismaClient } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
+import { config } from "../config.js";
+import { experimentRecord } from "../experiments.js";
 import { journey, person, settle, snapshot, type World } from "./domain.js";
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -247,6 +249,24 @@ export function adventureRoutes(
         );
       }
       return snapshot(w, req.userId, Date.now());
+    });
+  });
+  app.post("/api/v1/adventure/guest-sessions", {
+    bodyLimit: 256 * 1024,
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+  }, async req => {
+    const input = sessionSchema.parse(req.body);
+    const owner = `guest:${input.id}`;
+    return atomic(world => {
+      const prior = world.sessions[input.id];
+      if (prior && prior.userId !== owner)
+        throw new ApiError(409, "conflict", "Mã phiên đã được sử dụng.");
+      try {
+        const session = settle(world, { ...input, userId: owner, groupId: null }, Date.now());
+        return { tripCode: experimentRecord(session, config.JWT_SECRET).tripCode };
+      } catch (error) {
+        throw new ApiError(400, "validation-error", error instanceof Error ? error.message : "Không lưu được phiên.");
+      }
     });
   });
   app.post("/api/v1/adventure/quiz", opts, async (req) => {

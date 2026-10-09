@@ -120,39 +120,115 @@ beforeEach(async () => {
   await db.$executeRaw`UPDATE adventure_state SET state = '{"people":{},"groups":{},"sessions":{},"invites":{}}'::jsonb WHERE id = 1`;
 });
 
-it("publishes only confirmed own tester metrics, keeps private fields hidden, and refreshes quiz scores", async () => {
-  const id = randomUUID(), ended = Date.now(), started = ended - 60000;
+it("automatically publishes all stored trips with live quiz scores and private identifiers removed", async () => {
+  const now = Date.now();
+  const existingId = randomUUID();
+  const existingStarted = now - 360000;
+  const existingEnded = now - 300000;
+  const existingSession = {
+    id: existingId, userId, groupId: null, goal: "Historical saved trip", topic: "biology",
+    started: existingStarted, ended: existingEnded, target: 60,
+    segments: [{ start: existingStarted, end: existingEnded, kind: "focus" }],
+    seconds: 60, contribution: 60, rules: "train-v1", distractions: 0,
+  };
+  await db.$executeRaw`UPDATE adventure_state SET state = jsonb_set(state, '{sessions}',
+    (state->'sessions') || ${JSON.stringify({ [existingId]: existingSession })}::jsonb) WHERE id = 1`;
+  await db.$executeRaw`INSERT INTO tester_runs (session_id, user_id, tester_code, topic, target_seconds,
+    elapsed_seconds, focused_seconds, distractions, completed, recorded_at, withdrawn_at)
+    VALUES (${existingId}::uuid, ${userId}::uuid, 'T-1234567890', 'biology', 60, 60, 60, 0, true,
+      ${new Date(existingEnded)}, NOW())`;
+
+  const id = randomUUID();
+  const ended = now - 60000;
+  const started = ended - 30000;
   const save = await app.inject({ method: "POST", url: "/api/v1/adventure/sessions", headers,
-    payload: { id, groupId: null, goal: "Private learning goal", topic: "biology", target: 60,
-      started, ended, distractions: 2, segments: [{ start: started, end: ended - 20000, kind: "focus" },
-        { start: ended - 20000, end: ended, kind: "distraction" }] } });
+    payload: { id, groupId: null, goal: "=HYPERLINK(\"https://example.invalid\",\"open\")", topic: "biology", target: 60,
+      started, ended, distractions: 1, segments: [{ start: started, end: started + 20000, kind: "focus" },
+        { start: started + 20000, end: ended, kind: "distraction" }] } });
   expect(save.statusCode).toBe(200);
-  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(0);
-  expect((await app.inject({ method: "POST", url: "/api/v1/experiments", payload: { sessionId: id } })).statusCode).toBe(401);
-  expect((await app.inject({ method: "POST", url: "/api/v1/experiments", headers: stranger, payload: { sessionId: id } })).statusCode).toBe(404);
-  const publish = await app.inject({ method: "POST", url: "/api/v1/experiments", headers,
-    payload: { sessionId: id, completionPercent: 75, focusedSeconds: 9999, quizScore: 999 } });
-  expect(publish.statusCode).toBe(200);
-  const publicList = await app.inject({ url: "/api/v1/experiments" });
-  expect(publicList.json()).toMatchObject({ total: 1, runs: [{ focusedSeconds: 40, elapsedSeconds: 60,
-    distractions: 2, completionPercent: 75, quizScore: null }] });
-  for (const privateValue of ["owner@example.com", userId, "Private learning goal", id]) expect(publicList.body).not.toContain(privateValue);
+
+  const firstPage = await app.inject({ url: "/api/v1/experiments?limit=1&offset=0" });
+  expect(firstPage.statusCode).toBe(200);
+  expect(firstPage.json()).toMatchObject({ total: 2, limit: 1, offset: 0,
+    runs: [{ topic: "biology", targetSeconds: 60, elapsedSeconds: 30, focusedSeconds: 20,
+      distractions: 1, completed: false, quizScore: null, quizTotal: null,
+      goalSummary: "=HYPERLINK(\"https://example.invalid\",\"open\")" }] });
+  const olderPage = await app.inject({ url: "/api/v1/experiments?limit=1&offset=1" });
+  expect(olderPage.json().runs[0].goalSummary).toBe("Historical saved trip");
+  expect(olderPage.json().runs[0].tripCode).not.toBe(firstPage.json().runs[0].tripCode);
+  for (const privateValue of ["owner@example.com", userId, existingId, id]) {
+    expect(firstPage.body).not.toContain(privateValue);
+    expect(olderPage.body).not.toContain(privateValue);
+  }
+
   const grade = await app.inject({ method: "POST", url: "/api/v1/adventure/quiz", headers,
     payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] } });
   expect(grade.statusCode).toBe(200);
-  expect((await app.inject({ url: "/api/v1/experiments" })).json().runs[0]).toMatchObject({ quizScore: 1, quizTotal: 1 });
+  const refreshed = await app.inject({ url: "/api/v1/experiments?limit=1" });
+  expect(refreshed.json().runs[0]).toMatchObject({ quizScore: 1, quizTotal: 1 });
+
   const csv = await app.inject({ url: "/api/v1/experiments/export.csv" });
   expect(csv.headers["content-type"]).toContain("text/csv");
-  expect(csv.body).toContain("self_reported_completion_percent");
+  expect(csv.body).toContain("trip_code");
+  expect(csv.body).toContain("goal_summary");
+  expect(csv.body).toContain("started_at");
+  expect(csv.body).toContain("ended_at");
+  expect(csv.body).toContain("'=HYPERLINK");
   expect(csv.body).not.toContain(userId);
-  await app.inject({ method: "DELETE", url: `/api/v1/experiments/${id}`, headers: stranger });
+  expect(csv.body).not.toContain(id);
+});
+
+it("accepts validated guest trips once, strips spoofed data, and rejects owner UUID collisions", async () => {
+  const id = randomUUID();
+  const ended = Date.now();
+  const started = ended - 30000;
+  const payload = {
+    id, groupId: randomUUID(), goal: "Guest first goal", topic: "biology", target: 60,
+    started, ended, segments: [
+      { start: started, end: started + 20000, kind: "focus" },
+      { start: started + 20000, end: ended, kind: "distraction" },
+    ],
+    userId, seconds: 9999, quiz: { score: 999, total: 999 }, materials: ["https://private.example/file"],
+  };
+  const first = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions", payload });
+  expect(first.statusCode).toBe(200);
+  expect(first.json()).toMatchObject({ tripCode: /^V-[A-F0-9]{12}$/ });
+  expect(Object.keys(first.json())).toEqual(["tripCode"]);
+  expect(first.body).not.toContain(id);
+  const originalTripCode = first.json().tripCode;
+
+  const retry = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
+    payload: { ...payload, goal: "Changed replay goal", seconds: 0 } });
+  expect(retry.statusCode).toBe(200);
+  expect(retry.json()).toEqual({ tripCode: originalTripCode });
+
+  const published = await app.inject({ url: "/api/v1/experiments" });
+  expect(published.json()).toMatchObject({ total: 1, runs: [{ tripCode: originalTripCode,
+    goalSummary: "Guest first goal", focusedSeconds: 20, elapsedSeconds: 30, distractions: 1,
+    completed: false, quizScore: null, quizTotal: null }] });
+  expect(published.body).not.toContain(id);
+  expect(published.body).not.toContain(userId);
+  expect(published.body).not.toContain("private.example");
+  const state = await db.$queryRaw<{ state: { sessions: Record<string, { userId: string; groupId: string | null; seconds: number; quiz?: unknown }> } }[]>`
+    SELECT state FROM adventure_state WHERE id = 1`;
+  expect(state[0].state.sessions[id]).toMatchObject({ userId: `guest:${id}`, groupId: null, seconds: 20 });
+  expect(state[0].state.sessions[id].quiz).toBeUndefined();
+
+  const invalidId = randomUUID();
+  const invalid = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
+    payload: { ...payload, id: invalidId, segments: [{ start: started, end: started, kind: "focus" }] } });
+  expect(invalid.statusCode).toBe(400);
   expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(1);
-  await app.inject({ method: "DELETE", url: `/api/v1/experiments/${id}`, headers });
-  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(0);
-  expect((await app.inject({ url: "/api/v1/experiments/mine", headers })).json()).toEqual([]);
-  for (let i = 0; i < 2; i++) await app.inject({ method: "POST", url: "/api/v1/experiments", headers, payload: { sessionId: id } });
-  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(1);
-  expect((await app.inject({ url: "/api/v1/experiments/mine", headers })).json()).toEqual([{ sessionId: id }]);
+
+  const collisionId = randomUUID();
+  const accountTrip = await app.inject({ method: "POST", url: "/api/v1/adventure/sessions", headers,
+    payload: { ...payload, id: collisionId, groupId: null, userId: undefined, seconds: undefined,
+      quiz: undefined, materials: undefined } });
+  expect(accountTrip.statusCode).toBe(200);
+  const collision = await app.inject({ method: "POST", url: "/api/v1/adventure/guest-sessions",
+    payload: { ...payload, id: collisionId } });
+  expect(collision.statusCode).toBe(409);
+  expect((await app.inject({ url: "/api/v1/experiments" })).json().total).toBe(2);
 });
 afterAll(async () => {
   await app?.close();

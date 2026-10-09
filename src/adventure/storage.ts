@@ -12,6 +12,7 @@ export type Saved = {
   local: World;
   notes: Record<string, string>;
   materials?: Record<string, NonNullable<ActiveTrip["materials"]>>;
+  guestPublished?: string[];
 };
 export const emptySaved = (): Saved => ({
   active: null,
@@ -20,6 +21,7 @@ export const emptySaved = (): Saved => ({
   local: emptyWorld(),
   notes: {},
   materials: {},
+  guestPublished: [],
 });
 const record = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -53,6 +55,9 @@ function validSession(v: unknown) {
 function validSaved(v: unknown): v is Saved {
   if (!record(v) || !record(v.local) || !record(v.notes) ||
       (v.materials !== undefined && (!record(v.materials) || !Object.values(v.materials).every(validMaterials))) ||
+      (v.guestPublished !== undefined && (!Array.isArray(v.guestPublished) ||
+        !v.guestPublished.every((id) => typeof id === "string" && id.length > 0) ||
+        new Set(v.guestPublished).size !== v.guestPublished.length)) ||
       !Object.values(v.notes).every((note) => typeof note === "string") ||
       !Array.isArray(v.pending) || !v.pending.every(validSession)) return false;
   const w = v.local;
