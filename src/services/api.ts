@@ -7,24 +7,60 @@ export const API_URL = resolveApiUrl(
   process.env.EXPO_PUBLIC_API_URL,
   Platform.OS,
 );
-console.log("API base URL:", API_URL);
 let accessToken: string | null = null;
 let expiresAt = 0;
-let refreshing: Promise<void> | null = null;
+let refreshing: { generation: number; promise: Promise<void> } | null = null;
+let storageUpdates: Promise<void> = Promise.resolve();
 let onExpired: () => void = () => {};
 let generation = 0;
 export function setExpiredHandler(handler: () => void) {
   onExpired = handler;
 }
-export async function acceptTokens(tokens: Tokens) {
-  await tokenStorage.set(tokens.refresh_token);
+function persistCredential(update: () => Promise<void>) {
+  const pending = storageUpdates.then(update);
+  storageUpdates = pending.catch(() => {});
+  return pending;
+}
+function assertGeneration(current: number) {
+  if (current !== generation)
+    throw new ApiError(409, "Tài khoản đã thay đổi. Vui lòng thử lại.");
+}
+async function applyTokens(tokens: Tokens, current: number, isCurrent = () => true) {
+  const assertCurrent = () => {
+    assertGeneration(current);
+    if (!isCurrent())
+      throw new ApiError(409, "Tài khoản đã thay đổi. Vui lòng thử lại.");
+  };
+  await persistCredential(async () => {
+    assertCurrent();
+    await tokenStorage.set(tokens.refresh_token);
+  });
+  assertCurrent();
   accessToken = tokens.access_token;
   expiresAt = Date.now() + tokens.expires_in * 1000;
+}
+export async function acceptTokens(tokens: Tokens, isCurrent = () => true) {
+  const current = ++generation;
+  accessToken = null;
+  expiresAt = 0;
+  refreshing = null;
+  try {
+    await applyTokens(tokens, current, isCurrent);
+  } catch (error) {
+    // A cancelled login may have already written storage; remove only its own credentials.
+    if (current === generation && !isCurrent()) {
+      await clearTokens();
+      if (generation === current + 1) onExpired();
+    }
+    throw error;
+  }
 }
 export async function clearTokens() {
   generation++;
   accessToken = null;
-  await tokenStorage.clear();
+  expiresAt = 0;
+  refreshing = null;
+  await persistCredential(() => tokenStorage.clear());
 }
 export class ApiError extends Error {
   constructor(
@@ -41,7 +77,6 @@ async function fetchWithTimeout(path: string, init: RequestInit) {
     ["/quizzes/generate", "/quiz/generate"].includes(path) ? 100000 : 30000,
   );
   const url = `${API_URL}${path}`;
-  console.log("Calling API URL:", url);
   try {
     return await fetch(url, {
       ...init,
@@ -86,10 +121,14 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T;
 }
 export async function restoreTokens() {
-  if (!refreshing) {
+  if (!refreshing || refreshing.generation !== generation) {
     const current = generation;
-    refreshing = (async () => {
+    const attempt = { generation: current, promise: Promise.resolve() };
+    attempt.promise = (async () => {
+      await storageUpdates;
+      assertGeneration(current);
       const refresh = await tokenStorage.get();
+      assertGeneration(current);
       if (!refresh) throw new ApiError(401, "Vui lòng đăng nhập.");
       const response = await fetchWithTimeout("/auth/refresh", {
         method: "POST",
@@ -97,40 +136,54 @@ export async function restoreTokens() {
         body: JSON.stringify({ refresh_token: refresh }),
       });
       const tokens = await decode<Tokens>(response);
-      if (current === generation) await acceptTokens(tokens);
+      assertGeneration(current);
+      await applyTokens(tokens, current);
     })()
       .catch(async (error) => {
-        if (error instanceof ApiError && error.status === 401) {
+        if (
+          current === generation &&
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
           await clearTokens();
-          onExpired();
+          if (generation === current + 1) onExpired();
         }
         throw error;
       })
       .finally(() => {
-        refreshing = null;
+        if (refreshing === attempt) refreshing = null;
       });
+    refreshing = attempt;
   }
-  await refreshing;
+  await refreshing.promise;
 }
 export async function request<T>(
   path: string,
   init: RequestInit = {},
   authenticated = true,
 ): Promise<T> {
+  const current = generation;
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   if (authenticated) {
     if (!accessToken) await restoreTokens();
+    assertGeneration(current);
+    if (!accessToken) throw new ApiError(401, "Vui lòng đăng nhập.");
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
   let response = await fetchWithTimeout(path, { ...init, headers });
+  if (authenticated) assertGeneration(current);
   if (authenticated && response.status === 401) {
     await restoreTokens();
+    assertGeneration(current);
+    if (!accessToken) throw new ApiError(401, "Vui lòng đăng nhập.");
     headers.set("Authorization", `Bearer ${accessToken}`);
     response = await fetchWithTimeout(path, { ...init, headers });
   }
-  return decode<T>(response);
+  const result = await decode<T>(response);
+  if (authenticated) assertGeneration(current);
+  return result;
 }
 export const post = <T>(path: string, body: unknown, authenticated = true) =>
   request<T>(
@@ -140,7 +193,9 @@ export const post = <T>(path: string, body: unknown, authenticated = true) =>
   );
 
 export async function getAccessToken() {
+  const current = generation;
   if (!accessToken || expiresAt - Date.now() < 30000) await restoreTokens();
+  assertGeneration(current);
   if (!accessToken) throw new ApiError(401, "Vui lòng đăng nhập.");
   return accessToken;
 }

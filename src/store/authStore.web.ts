@@ -103,6 +103,8 @@ interface AuthStore {
   login: (email: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
+// Only the newest account operation may publish identity or clear credentials.
+let authOperation = 0;
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   ready: false,
@@ -110,9 +112,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   needsLogin: false,
   error: null,
   bootstrap: async () => {
+    const current = ++authOperation;
     let cached: User | null = null;
     try {
       await useSetupStore.persist.rehydrate();
+      if (current !== authOperation) return;
       cached = readCachedUser();
       let refreshToken: string | null = null;
       try {
@@ -120,6 +124,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       } catch {
         // Treat unavailable session storage as a missing credential.
       }
+      if (current !== authOperation) return;
       if (!refreshToken) {
         if (cached) claimOwner(cached);
         set({
@@ -131,11 +136,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
         return;
       }
       await restoreTokens();
+      if (current !== authOperation) return;
       const user = await request<User>("/users/me");
+      if (current !== authOperation) return;
       claimOwner(user);
       cache(user);
       set({ user, error: null, offline: false, needsLogin: false });
     } catch (error) {
+      if (current !== authOperation) return;
       cached ??= readCachedUser();
       const needsLogin = error instanceof ApiError && error.status === 401;
       if (needsLogin) {
@@ -145,6 +153,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
           // A rejected credential must not hide the cached local owner.
         }
       }
+      if (current !== authOperation) return;
       if (cached) claimOwner(cached);
       set({
         user: cached,
@@ -153,34 +162,44 @@ export const useAuthStore = create<AuthStore>((set) => ({
         error: error instanceof Error ? error.message : null,
       });
     } finally {
-      set({ ready: true });
+      if (current === authOperation) set({ ready: true });
     }
   },
   login: async (email, password, name) => {
+    const current = ++authOperation;
     const result = await post<AuthResponse>(
       name ? "/auth/register" : "/auth/login",
       { email, password, ...(name ? { name } : {}) },
       false,
     );
-    await acceptTokens(result.tokens);
+    if (current !== authOperation)
+      throw new ApiError(409, "Tài khoản đã thay đổi. Vui lòng thử lại.");
+    await acceptTokens(result.tokens, () => current === authOperation);
+    if (current !== authOperation)
+      throw new ApiError(409, "Tài khoản đã thay đổi. Vui lòng thử lại.");
     cache(result.user);
     claimOwner(result.user);
-    set({ user: result.user, error: null, offline: false, needsLogin: false });
+    set({ user: result.user, ready: true, error: null, offline: false, needsLogin: false });
   },
   logout: async () => {
+    const current = ++authOperation;
     try {
       await post("/auth/logout", {});
     } finally {
-      try {
-        await clearTokens();
-      } catch {
-        // The in-memory access token is cleared before storage is touched.
-      }
-      clearCachedUser();
-      try {
-        useSetupStore.getState().reset();
-      } finally {
-        set({ user: null, offline: false, needsLogin: false, error: null });
+      if (current === authOperation) {
+        try {
+          await clearTokens();
+        } catch {
+          // The in-memory access token is cleared before storage is touched.
+        }
+        if (current === authOperation) {
+          clearCachedUser();
+          try {
+            useSetupStore.getState().reset();
+          } finally {
+            set({ user: null, ready: true, offline: false, needsLogin: false, error: null });
+          }
+        }
       }
     }
   },

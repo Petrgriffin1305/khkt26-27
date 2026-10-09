@@ -19,6 +19,11 @@ import {
 } from "./focus";
 import { emptySaved, readSaved, writeSaved, type Saved } from "./storage";
 import {
+  localDayKey,
+  millisecondsUntilNextLocalDay,
+  shouldRefreshWorkspaceClock,
+} from "./idleClock";
+import {
   person,
   settle,
   snapshot,
@@ -86,6 +91,7 @@ function AdventureWorkspace() {
   const [saved, setSaved] = useState<Saved>(emptySaved);
   const current = useRef(saved),
     ownerRef = useRef(owner);
+  const hasActiveTrip = Boolean(saved.active);
   const [loaded, setLoaded] = useState(false),
     [exclusive, setExclusive] = useState(false);
   const [storageError, setStorageError] = useState(false);
@@ -94,6 +100,7 @@ function AdventureWorkspace() {
     [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false),
     [online, setOnline] = useState(true);
+  const lastLocalDay = useRef(localDayKey(now));
   const [goal, setGoal] = useState(""),
     [topic, setTopic] = useState("biology"),
     [documentText, setDocumentText] = useState("");
@@ -190,27 +197,58 @@ function AdventureWorkspace() {
     };
   }, [owner]);
   useEffect(() => {
-    const interval = setInterval(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const refreshClock = () => {
       const at = Date.now();
-      setNow(at);
-      const trip = current.current.active;
+      const currentDay = localDayKey(at);
       if (
-        trip &&
-        trip.state !== "pending" &&
-        focused(tick(trip, at)) >= trip.target
-      )
-        finishRef.current();
-    }, 1000);
+        shouldRefreshWorkspaceClock(
+          hasActiveTrip,
+          lastLocalDay.current,
+          currentDay,
+        )
+      ) {
+        lastLocalDay.current = currentDay;
+        setNow(at);
+      }
+      return at;
+    };
+    const scheduleNextLocalDay = () => {
+      timeout = setTimeout(() => {
+        refreshClock();
+        scheduleNextLocalDay();
+      }, millisecondsUntilNextLocalDay(Date.now()) + 50);
+    };
+    refreshClock();
+    if (hasActiveTrip) {
+      interval = setInterval(() => {
+        const at = refreshClock();
+        const trip = current.current.active;
+        if (
+          trip &&
+          trip.state !== "pending" &&
+          focused(tick(trip, at)) >= trip.target
+        )
+          finishRef.current();
+      }, 1000);
+    }
+    else scheduleNextLocalDay();
     const connectivity = () => setOnline(navigator.onLine);
     connectivity();
     window.addEventListener("online", connectivity);
     window.addEventListener("offline", connectivity);
+    window.addEventListener("focus", refreshClock);
+    document.addEventListener("visibilitychange", refreshClock);
     return () => {
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
+      if (timeout) clearTimeout(timeout);
       window.removeEventListener("online", connectivity);
       window.removeEventListener("offline", connectivity);
+      window.removeEventListener("focus", refreshClock);
+      document.removeEventListener("visibilitychange", refreshClock);
     };
-  }, []);
+  }, [hasActiveTrip]);
   useEffect(() => {
     if (!loaded || !exclusive) return;
     const checkpoint = () => {
@@ -434,6 +472,7 @@ function AdventureWorkspace() {
   async function customize(
     color = carriage?.color ?? "#398575",
     decor = carriage?.decor ?? "plant",
+    at = now,
   ) {
     const value = {
       name: carriageName.trim() || carriage?.name || "Toa Mây",
@@ -447,7 +486,7 @@ function AdventureWorkspace() {
       commit({
         ...current.current,
         local,
-        snapshot: snapshot(local, owner, now),
+        snapshot: snapshot(local, owner, at),
       });
     }
     setNotice("Đã lưu toa của bạn.");
@@ -1195,7 +1234,10 @@ function AdventureWorkspace() {
                       </label>
                       <button
                         disabled={busy}
-                        onClick={() => void run(() => customize())}
+                        onClick={() => {
+                          const at = Date.now();
+                          void run(() => customize(undefined, undefined, at));
+                        }}
                       >
                         Lưu tên toa
                       </button>
@@ -1211,7 +1253,10 @@ function AdventureWorkspace() {
                               }
                               aria-pressed={carriage?.color === color}
                               disabled={busy}
-                              onClick={() => void run(() => customize(color))}
+                              onClick={() => {
+                                const at = Date.now();
+                                void run(() => customize(color, undefined, at));
+                              }}
                             >
                               {carriage?.color === color ? "✓" : ""}
                             </button>
@@ -1228,7 +1273,10 @@ function AdventureWorkspace() {
                             }
                             disabled={busy}
                             onClick={() =>
-                              void run(() => customize(undefined, decor))
+                              {
+                                const at = Date.now();
+                                void run(() => customize(undefined, decor, at));
+                              }
                             }
                           >
                             {["♣ Chậu cây", "▤ Sách", "✦ Ngôi sao"][i]}

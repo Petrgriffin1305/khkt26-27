@@ -26,5 +26,5 @@ jobs:
         working-directory: backend
       - run: npm run build
         working-directory: backend
-      - run: npx expo export --platform ios --platform android
+      - run: npm run build:web
       - run: docker build -t pomodoro-api backend

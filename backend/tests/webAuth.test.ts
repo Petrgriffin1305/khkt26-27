@@ -236,4 +236,39 @@ describe("web account persistence", () => {
     expect(useAuthStore.getState().needsLogin).toBe(false);
     expect(useAuthStore.getState().offline).toBe(false);
   });
+
+  it("does not restore an old cached owner after a new login finishes", async () => {
+    local.setItem("viendu.account", JSON.stringify(user));
+    authDeps.getRefreshToken.mockResolvedValue("refresh");
+    let rejectRefresh!: (error: Error) => void;
+    authDeps.restoreTokens.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectRefresh = reject;
+    }));
+    const bootstrap = useAuthStore.getState().bootstrap();
+    await vi.waitFor(() => expect(authDeps.restoreTokens).toHaveBeenCalledOnce());
+    const nextUser = { ...user, id: "new-user", email: "new@example.com" };
+    authDeps.post.mockResolvedValueOnce({ user: nextUser, tokens });
+    await useAuthStore.getState().login(nextUser.email, "password123");
+    rejectRefresh(new authDeps.ApiError(401, "old refresh expired"));
+    await bootstrap;
+    expect(useAuthStore.getState().user).toEqual(nextUser);
+    expect(useAuthStore.getState().ready).toBe(true);
+    expect(setupState.ownerId).toBe(nextUser.id);
+    expect(authDeps.clearTokens).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a new login when an older logout response finishes", async () => {
+    await useAuthStore.getState().login(user.email, "password123");
+    let finishLogout!: () => void;
+    authDeps.post.mockImplementationOnce(() => new Promise<void>((resolve) => { finishLogout = resolve; }));
+    const logout = useAuthStore.getState().logout();
+    const nextUser = { ...user, id: "new-user", email: "new@example.com" };
+    authDeps.post.mockResolvedValueOnce({ user: nextUser, tokens });
+    await useAuthStore.getState().login(nextUser.email, "password123");
+    finishLogout();
+    await logout;
+    expect(useAuthStore.getState().user).toEqual(nextUser);
+    expect(local.getItem("viendu.account")).toBe(JSON.stringify(nextUser));
+    expect(authDeps.clearTokens).not.toHaveBeenCalled();
+  });
 });

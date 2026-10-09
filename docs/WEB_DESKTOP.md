@@ -4,7 +4,7 @@ Giao diện chính dùng cảnh tàu 3D cartoon bằng Three.js. Web và Electro
 
 ## Chạy web
 
-Yêu cầu Node 22.13 trở lên.
+Dùng Node 24 LTS và npm 11 như GitHub Actions; npm 10 có thể từ chối lockfile khi giải quyết peer dependency.
 
 ```bash
 npm ci

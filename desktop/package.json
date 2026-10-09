@@ -1,6 +1,6 @@
 {
   "name": "pomofocus-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "main": "dist/adventureMain.js",
   "scripts": {
@@ -21,7 +21,7 @@
   "engines": {
     "node": ">=22.13"
   },
-  "description": "Vi\u1ec5n Du \u2014 Focus and learning adventure",
+  "description": "Viễn Du — Focus and learning adventure",
   "author": "Vien Du",
   "build": {
     "appId": "com.viendu.study",
