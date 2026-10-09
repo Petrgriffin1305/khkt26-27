@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import test from "node:test";
 import { runPrestart, runStart } from "../scripts/start.mjs";
 import {
@@ -9,7 +10,7 @@ import {
   validateProductionEnvironment,
 } from "../scripts/start-production.mjs";
 
-const root = "/app";
+const root = path.resolve("/app");
 const productionEnv = {
   DATABASE_URL: "postgresql://db.example/viendu",
   REDIS_URL: "rediss://cache.example:6380",
@@ -17,11 +18,11 @@ const productionEnv = {
   PORT: "8080",
 };
 const artifacts = new Set([
-  "/app/dist/index.html",
-  "/app/backend/dist/server.js",
-  "/app/backend/prisma/schema.prisma",
-  "/app/backend/prisma/seed.ts",
-  "/app/backend/prisma/migrations",
+  path.join(root, "dist/index.html"),
+  path.join(root, "backend/dist/server.js"),
+  path.join(root, "backend/prisma/schema.prisma"),
+  path.join(root, "backend/prisma/seed.ts"),
+  path.join(root, "backend/prisma/migrations"),
 ]);
 
 test("production startup rejects missing cloud services before running commands", async () => {
@@ -60,7 +61,8 @@ test("production artifacts are checked before migrations or server startup", asy
     runProductionStartup({
       env: productionEnv,
       root,
-      exists: (path) => path !== "/app/backend/dist/server.js" && artifacts.has(path),
+      exists: (artifactPath) =>
+        artifactPath !== path.join(root, "backend/dist/server.js") && artifacts.has(artifactPath),
       run: async (...args) => calls.push(args),
       logger: { log() {} },
     }),
@@ -94,7 +96,7 @@ test("production startup migrates, seeds, then starts with Railway-safe defaults
   assert.equal(calls[0].options.env.NODE_ENV, "production");
   assert.equal(calls[0].options.env.HOST, "0.0.0.0");
   assert.equal(calls[0].options.env.PORT, "8080");
-  assert.equal(calls[0].options.env.WEB_DIST_DIR, "/app/dist");
+  assert.equal(calls[0].options.env.WEB_DIST_DIR, path.resolve(root, "dist"));
   assert.equal(calls[0].options.env.STORAGE_DRIVER, "disabled");
 });
 
