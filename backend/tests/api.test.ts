@@ -802,7 +802,8 @@ it("rolls back the entire Gemini quiz if a database insert fails", async () => {
   const response = await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers,
     payload: { topic: "biology", count: 2 } });
   expect(response.statusCode).toBe(500);
-  // PGlite socket closes a failed transaction connection; verify rollback via its underlying DB.
+  // Socket detach rolls back asynchronously; wait for it before reading the shared PGlite DB.
+  await expect.poll(() => pg.isInTransaction(), { timeout: 5000 }).toBe(false);
   const rows = await pg.query<{ count: number }>(
     "SELECT COUNT(*)::int AS count FROM quiz_bank WHERE owner_id=$1", [userId],
   );
