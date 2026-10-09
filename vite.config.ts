@@ -14,6 +14,11 @@ export default defineConfig({
       ],
     },
   },
-  preview: { host: "localhost", port: 8084, strictPort: true },
+  preview: {
+    host: "localhost",
+    port: 8084,
+    strictPort: true,
+    allowedHosts: ["viendu.up.railway.app"],
+  },
   build: { outDir: "dist" },
 });
