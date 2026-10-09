@@ -33,9 +33,9 @@ The Docker build leaves `VITE_API_URL` blank by default so the web app calls the
 
 The launcher sets `HOST=0.0.0.0`, `NODE_ENV=production`, and `WEB_DIST_DIR=dist`; it uses the configured `PORT`. `STORAGE_DRIVER=disabled` is the default for this deployment, so document parsing stays in the browser and no S3 bucket or credentials are required. If you explicitly configure another storage driver, the launcher preserves it.
 
-Optionally add `GEMINI_API_KEY` as a secret variable on the Viễn Du service to enable AI-generated quizzes. Keep it server-side; never set it as `VITE_GEMINI_API_KEY`. Static quizzes work without it.
+Optionally add `GEMINI_API_KEY` as a secret variable on the Viễn Du service to enable AI-generated quizzes. Keep it server-side; never set it as `VITE_GEMINI_API_KEY`. Without it, study sessions still work, but AI questions are unavailable; the app does not substitute a static question bank.
 
-The first deployment and each later container start run `prisma migrate deploy`, seed the topic bank, and then start the API. The `/health` endpoint reports whether PostgreSQL and Redis are reachable. The service becomes healthy only after those dependencies are available.
+The first deployment and each later container start run `prisma migrate deploy`, seed the study topics, and then start the API. The `/health` endpoint reports whether PostgreSQL and Redis are reachable. The service becomes healthy only after those dependencies are available.
 
 ## Build locally
 

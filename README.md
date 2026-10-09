@@ -13,9 +13,17 @@ npm --prefix backend run db:generate
 npm start
 ```
 
-`npm start` starts the local API/database and the web app at `http://localhost:8084` together. `npm run dev` and `npm run web` do the same thing. Healthy existing Viễn Du services are reused; occupied unrelated ports produce an actionable error. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and the quiz bank. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
+`npm start` starts the local API/database and the web app at `http://localhost:8084` together. `npm run dev` and `npm run web` do the same thing. Healthy existing Viễn Du services are reused; occupied unrelated ports produce an actionable error. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and AI questions. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
 
-The countdown keeps running when you leave a study session. Each departure is counted once as a distraction; returning resumes immediately. **Lịch sử chuyến đi** automatically shows every saved trip, including trips ended early, with a unique anonymous trip code, start/end times, a short goal summary, duration, distraction count, and the latest server-graded quiz score. Account trips appear after synchronization; guest trips upload automatically when connected, keeping their local progress separate. Emails, account identifiers, and study documents are not published. CSV exports the latest 10,000 trips for experiments.
+Each departure is counted once as a distraction; returning resumes immediately. **Lịch sử chuyến đi** automatically shows every saved trip, including trips ended early, with a unique anonymous trip code, start/end times, a short goal summary, duration, distraction count, and the server-graded question score. Account trips appear after synchronization; guest trips upload automatically when connected, keeping their local progress separate. Emails, account identifiers, and study documents are not published. CSV exports the latest 10,000 trips for experiments.
+
+## AI questions and learning journal
+
+Choose **Tạo câu hỏi bằng AI** after a saved trip and select 1–30 questions. Questions use the trip topic, goal, and any locally extracted study text. There is no prebuilt question bank in the learning flow. Draft questions and answers stay in owner-scoped browser storage. The first submitted score and detailed answer feedback are saved by the server; reopening the journal restores the assessment.
+
+Wrong answers identify **Kiến thức cần ôn** from the concepts tested in that question set. **Ôn lại trong một phiên mới** opens a new ticket with those concepts and the previous material; the learner chooses when to start. A perfect score only describes this set of questions. Older score-only assessments cannot reconstruct knowledge gaps.
+
+The journal shows distractions, valid focus time as a percentage of actual elapsed trip time, and the question score separately. Focus labels use descriptive thresholds: at least 80%, 50–79%, and below 50%; they are not a clinical assessment or a combined academic grade. **Kinh nghiệm toa** is accumulated valid study time: 60 seconds = 1 XP, with remaining seconds carried forward. Quiz scores and distraction counts do not directly add or subtract XP; time away from focus earns no XP.
 
 ## Preview a production web build
 

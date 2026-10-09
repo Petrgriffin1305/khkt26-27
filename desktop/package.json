@@ -1,6 +1,6 @@
 {
   "name": "viendu-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "main": "dist/adventureMain.js",
   "scripts": {
@@ -20,7 +20,7 @@
   "engines": {
     "node": ">=22.13"
   },
-  "description": "Vi\u1ec5n Du \u2014 Focus and learning adventure",
+  "description": "Viễn Du — Focus and learning adventure",
   "author": "Vien Du",
   "build": {
     "appId": "com.viendu.study",

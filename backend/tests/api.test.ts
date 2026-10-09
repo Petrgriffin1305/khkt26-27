@@ -39,7 +39,7 @@ vi.mock("../src/ai.js", () => ({
 vi.mock("../src/gemini.js", () => ({
   generateGeminiQuiz: vi.fn().mockResolvedValue([{
     id: "provider-label", question: "Gemini question", options: ["A", "B", "C", "D"],
-    correctAnswerIndex: 1, explanation: "Gemini explanation",
+    correctAnswerIndex: 1, explanation: "Gemini explanation", knowledgePoint: "Cell structure",
   }]),
 }));
 import { generateGeminiQuiz } from "../src/gemini.js";
@@ -83,6 +83,7 @@ beforeAll(async () => {
   );
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261007000000_adventure/migration.sql", import.meta.url), "utf8"));
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261009000000_tester_runs/migration.sql", import.meta.url), "utf8"));
+  await pg.exec(readFileSync(new URL("../prisma/migrations/20261009100000_quiz_knowledge_point/migration.sql", import.meta.url), "utf8"));
   await server.start();
   app = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
   await app.ready();
@@ -754,15 +755,31 @@ it("generates private Gemini questions with database UUIDs and grades them", asy
   const row = await db.quizQuestion.findUniqueOrThrow({ where: { id: questions[0].id } });
   expect(row.owner_id).toBe(userId);
   expect(row.source).toBe("gemini_generated");
+  expect(row.knowledge_point).toBe("Cell structure");
+  expect(questions[0].knowledgePoint).toBe("Cell structure");
   const saved = await app.inject({ method: "POST", url: "/api/v1/sessions", headers, payload: session() });
   const answer = { session_id: saved.json().id, question_id: row.id, selected_index: 1 };
   expect((await app.inject({ method: "POST", url: "/api/v1/quizzes/answer", headers, payload: answer })).json().is_correct).toBe(true);
   const foreign = await app.inject({ method: "POST", url: "/api/v1/quizzes/answer", headers: stranger, payload: answer });
   expect(foreign.statusCode).toBe(404);
 });
+it("stores the generated question as the knowledge point when the provider omits it", async () => {
+  vi.mocked(generateGeminiQuiz).mockResolvedValueOnce([{
+    id: "provider-label", question: "A bounded question?", options: ["A", "B", "C", "D"],
+    correctAnswerIndex: 1, explanation: "Provider explanation",
+  }]);
+  const generated = await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers,
+    payload: { topic: "biology", goal: "Review cells", count: 1 } });
+  expect(generated.statusCode).toBe(201);
+  expect(generated.json()[0].knowledgePoint).toBe("A bounded question?");
+  const row = await db.quizQuestion.findUniqueOrThrow({ where: { id: generated.json()[0].id } });
+  expect(row.knowledge_point).toBe("A bounded question?");
+});
 it("rejects invalid Gemini requests before calling the provider", async () => {
   vi.mocked(generateGeminiQuiz).mockClear();
-  for (const payload of [{ topic: "biology", count: 0 }, { topic: "biology", count: "3" }, { topic: "biology", questionCount: 3 }]) {
+  for (const payload of [
+    { topic: "biology", count: 31 }, { topic: "biology", goal: "x".repeat(501) },
+  ]) {
     expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers, payload })).statusCode).toBe(400);
   }
   expect((await app.inject({ method: "POST", url: "/api/v1/quiz/generate", headers, payload: { topic: "absent", count: 1 } })).statusCode).toBe(404);
@@ -899,7 +916,15 @@ it("serializes concurrent invitations without exceeding six members", async () =
   });
   expect(state.json().group.members).toHaveLength(6);
 });
-it("grades adventure quiz once and protects another learner's session", async () => {
+it("grades thirty answers from trusted question data, freezes the first assessment, and protects owners", async () => {
+  const questionRows = await Promise.all(Array.from({ length: 30 }, (_, index) =>
+    db.quizQuestion.create({ data: {
+      topic_id: "biology", owner_id: null, question: `Trusted question ${index}`,
+      options: ["A", "B", "C", "D"], correct_index: index % 4,
+      explanation: `Trusted explanation ${index}`,
+      knowledge_point: index === 0 ? null : `Trusted concept ${index}`,
+    } }),
+  ));
   const at = Date.now(),
     id = randomUUID();
   const payload = {
@@ -927,17 +952,56 @@ it("grades adventure quiz once and protects another learner's session", async ()
     method: "POST",
     url: "/api/v1/adventure/quiz",
     headers,
-    payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] },
+    payload: { sessionId: id, answers: questionRows.map((question, index) => ({
+      id: question.id, selected: index % 2 === 0 ? (index + 1) % 4 : index % 4,
+      correctIndex: 3, correct: true, explanation: "Client spoof", knowledgePoint: "Client spoof",
+    })) },
   });
-  expect(result.json().sessions[0].quiz).toEqual({ score: 1, total: 1 });
+  expect(result.statusCode).toBe(200);
+  const assessment = result.json().sessions[0].quiz;
+  expect(assessment).toMatchObject({ score: 15, total: 30 });
+  expect(assessment.feedback).toHaveLength(30);
+  const reopened = await app.inject({ url: "/api/v1/adventure", headers });
+  expect(reopened.json().sessions[0].quiz).toEqual(assessment);
+  const publicHistory = await app.inject({ url: "/api/v1/experiments" });
+  expect(publicHistory.json().runs[0]).toMatchObject({ quizScore: 15, quizTotal: 30 });
+  const publicCsv = await app.inject({ url: "/api/v1/experiments/export.csv" });
+  for (const response of [publicHistory, publicCsv]) {
+    for (const privateText of ["Trusted question", "Trusted explanation", "Trusted concept", questionRows[0].id])
+      expect(response.body).not.toContain(privateText);
+  }
+  expect(assessment.feedback[0]).toEqual({
+    questionId: questionRows[0].id, question: "Trusted question 0", options: ["A", "B", "C", "D"],
+    selected: 1, correctIndex: 0, correct: false, explanation: "Trusted explanation 0",
+    knowledgePoint: "Trusted question 0",
+  });
+  expect(assessment.feedback[1]).toMatchObject({
+    questionId: questionRows[1].id, selected: 1, correctIndex: 1, correct: true,
+    explanation: "Trusted explanation 1", knowledgePoint: "Trusted concept 1",
+  });
   const retry = await app.inject({
     method: "POST",
     url: "/api/v1/adventure/quiz",
     headers,
-    payload: { sessionId: id, answers: [{ id: questionId, selected: 0 }] },
+    payload: { sessionId: id, answers: questionRows.map((question) => ({ id: question.id, selected: 0 })) },
   });
-  expect(retry.json().sessions[0].quiz).toEqual({ score: 1, total: 1 });
+  expect(retry.json().sessions[0].quiz).toEqual(assessment);
   expect(retry.json().person.seconds).toBe(60);
+  const tooMany = await app.inject({
+    method: "POST", url: "/api/v1/adventure/quiz", headers,
+    payload: { sessionId: id, answers: [...questionRows, { id: randomUUID(), selected: 0 }].map((question) => ({ id: question.id, selected: 0 })) },
+  });
+  expect(tooMany.statusCode).toBe(400);
+  await db.topic.upsert({ where: { id: "mathematics" },
+    create: { id: "mathematics", name: "Mathematics", icon: "📐" },
+    update: {} });
+  const wrongTopic = await db.quizQuestion.create({ data: {
+    topic_id: "mathematics", owner_id: null, question: "Other topic question",
+    options: ["A", "B", "C", "D"], correct_index: 1, explanation: "Other topic explanation",
+  } });
+  const mismatch = await app.inject({ method: "POST", url: "/api/v1/adventure/quiz", headers,
+    payload: { sessionId: id, answers: [{ id: wrongTopic.id, selected: 1 }] } });
+  expect(mismatch.statusCode).toBe(400);
   const other = await app.inject({
     method: "POST",
     url: "/api/v1/adventure/quiz",
@@ -945,6 +1009,22 @@ it("grades adventure quiz once and protects another learner's session", async ()
     payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] },
   });
   expect(other.statusCode).toBe(404);
+});
+it("continues to read saved score-only assessments without detailed feedback", async () => {
+  const at = Date.now();
+  const id = randomUUID();
+  const saved = await app.inject({ method: "POST", url: "/api/v1/adventure/sessions", headers,
+    payload: { id, groupId: null, goal: "Older quiz", topic: "biology", started: at - 60000,
+      ended: at, target: 60, segments: [{ start: at - 60000, end: at, kind: "focus" }] } });
+  expect(saved.statusCode).toBe(200);
+  const rows = await db.$queryRaw<{ state: { sessions: Record<string, Record<string, unknown>> } }[]>`
+    SELECT state FROM adventure_state WHERE id = 1`;
+  rows[0].state.sessions[id].quiz = { score: 2, total: 3 };
+  await db.$executeRaw`UPDATE adventure_state SET state = ${JSON.stringify(rows[0].state)}::jsonb WHERE id = 1`;
+
+  const result = await app.inject({ url: "/api/v1/adventure", headers });
+  expect(result.statusCode).toBe(200);
+  expect(result.json().sessions[0].quiz).toEqual({ score: 2, total: 3 });
 });
 it("rolls back the entire Gemini quiz if a database insert fails", async () => {
   const before = await db.quizQuestion.count({ where: { owner_id: userId } });

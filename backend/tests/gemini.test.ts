@@ -21,14 +21,64 @@ describe("Gemini adapter", () => {
   it("sends untrusted study data with a fixed JSON schema and configured model", async () => {
     config.GEMINI_API_KEY = "test-only-key";
     generateContent.mockResolvedValue({ text: JSON.stringify([question]) });
-    expect(await generateGeminiQuiz({ topic: "biology", documentText: "Study material text", count: 1 })).toEqual([question]);
+    expect(await generateGeminiQuiz({ topic: "biology", documentText: "Study material text", goal: "Review cells", count: 1 })).toEqual([question]);
     const request = generateContent.mock.calls[0][0];
     expect(request.model).toBe(config.GEMINI_MODEL);
     expect(request.config.responseMimeType).toBe("application/json");
-    expect(request.config.responseSchema).toEqual(quizResponseSchema);
-    expect(request.config.responseSchema.items.properties.options.minItems).toBe("4");
+    expect(request.config.responseJsonSchema).toEqual(quizResponseSchema());
+    expect(request.config.responseJsonSchema.items.properties.options.minItems).toBe(4);
+    expect(request.config.responseJsonSchema.items.required).toContain("knowledgePoint");
     expect(JSON.parse(request.contents).studyData.documentText).toBe("Study material text");
+    expect(JSON.parse(request.contents).studyData.goal).toBe("Review cells");
+    expect(request.config.systemInstruction).toContain("đúng 1 câu");
     expect(request.config.abortSignal).toBeInstanceOf(AbortSignal);
+  });
+  it("keeps exact choice bounds without expanding the quiz array into fixed output bounds", () => {
+    const schema = quizResponseSchema();
+    expect(schema).toMatchObject({
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "question", "options", "correctAnswerIndex", "explanation", "knowledgePoint"],
+        properties: {
+          id: { type: "string" },
+          question: { type: "string" },
+          options: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
+          correctAnswerIndex: { type: "integer", minimum: 0, maximum: 3 },
+          explanation: { type: "string" },
+          knowledgePoint: { type: "string", description: "A concise concept label of at most 200 characters." },
+        },
+      },
+    });
+    expect(schema).not.toHaveProperty("minItems");
+    expect(schema).not.toHaveProperty("maxItems");
+  });
+  it("requests thirty questions without fixed array bounds rejected by the provider", async () => {
+    config.GEMINI_API_KEY = "test-only-key";
+    const questions = Array.from({ length: 30 }, (_, index) => ({ ...question, id: `q${index}` }));
+    generateContent.mockImplementation(request => {
+      const schema = request.config.responseJsonSchema as { minItems?: number; maxItems?: number };
+      if (schema.minItems !== undefined || schema.maxItems !== undefined)
+        return Promise.reject({ status: 400, message: "fixed array bounds exceed the provider grammar limit" });
+      return Promise.resolve({ text: JSON.stringify(questions) });
+    });
+
+    expect(await generateGeminiQuiz({ topic: "biology", count: 30 })).toHaveLength(30);
+    const request = generateContent.mock.calls[0][0];
+    const schema = request.config.responseJsonSchema;
+    expect(request.config.systemInstruction).toContain("đúng 30 câu");
+    expect(schema).not.toHaveProperty("minItems");
+    expect(schema).not.toHaveProperty("maxItems");
+    expect(schema.items.properties.options).toMatchObject({ minItems: 4, maxItems: 4 });
+  });
+  it("rejects a provider response whose question count differs from the request", async () => {
+    config.GEMINI_API_KEY = "test-only-key";
+    const questions = Array.from({ length: 29 }, (_, index) => ({ ...question, id: `q${index}` }));
+    generateContent.mockResolvedValue({ text: JSON.stringify(questions) });
+
+    await expect(generateGeminiQuiz({ topic: "biology", count: 30 })).rejects.toMatchObject({
+      status: 502, kind: "invalid-ai-output",
+    });
   });
   it("does not contact Gemini without a key", async () => {
     config.GEMINI_API_KEY = "";
@@ -113,17 +163,17 @@ describe("Gemini adapter", () => {
     await expect(generateGeminiQuiz({ topic: "biology", count: 1 })).rejects.toMatchObject({ kind: "invalid-ai-output" });
     expect(generateContent).toHaveBeenCalledTimes(1);
   });
-  it("aborts requests after 60 seconds", async () => {
+  it("aborts requests after 90 seconds", async () => {
     vi.useFakeTimers(); config.GEMINI_API_KEY = "test-only-key";
     config.GEMINI_FALLBACK_MODEL = "gemini-fallback";
     generateContent.mockImplementation(({ config: options }) => new Promise((_, reject) => {
       options.abortSignal.addEventListener("abort", () => reject(new Error("abort")), { once: true });
     }));
     const assertion = expect(generateGeminiQuiz({ topic: "biology", count: 1 })).rejects.toMatchObject({ status: 504 });
-    await vi.advanceTimersByTimeAsync(60000); await assertion;
+    await vi.advanceTimersByTimeAsync(90000); await assertion;
     expect(generateContent).toHaveBeenCalledTimes(1);
   });
-  it("shares one 60-second deadline across the primary and fallback attempts", async () => {
+  it("shares one 90-second deadline across the primary and fallback attempts", async () => {
     vi.useFakeTimers();
     config.GEMINI_API_KEY = "test-only-key";
     config.GEMINI_FALLBACK_MODEL = "gemini-fallback";
@@ -136,7 +186,7 @@ describe("Gemini adapter", () => {
 
     const operation = generateGeminiQuiz({ topic: "biology", count: 1 });
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(45000);
+    await vi.advanceTimersByTimeAsync(75000);
     rejectPrimary({ status: 503, message: JSON.stringify({ error: { status: "UNAVAILABLE" } }) });
     await Promise.resolve();
     await Promise.resolve();

@@ -1,3 +1,4 @@
+import type { QuizAssessment } from "./quizAssessment.js";
 export const RULES = "train-v1";
 export type Segment = {
   start: number;
@@ -49,7 +50,7 @@ export type Session = {
   rules: string;
   /** Distinct departures from focus, including departures shorter than one millisecond. */
   distractions?: number;
-  quiz?: { score: number; total: number };
+  quiz?: QuizAssessment;
 };
 export type World = {
   revision?: number;

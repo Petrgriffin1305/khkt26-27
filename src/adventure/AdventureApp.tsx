@@ -6,6 +6,7 @@ import { Scene } from "./Scene";
 import { JourneyView } from "./JourneyView";
 import { DurationPicker } from "./DurationPicker";
 import { ExperimentResults } from "./ExperimentResults";
+import { QuizPanel } from "./QuizPanel";
 import { permanentGuestFailure, publishGuestSessions, type GuestPublicationStatus } from "./guestPublication";
 import { GuestHistorySync } from "./GuestHistorySync";
 import { studyTopics } from "./topics";
@@ -21,6 +22,8 @@ import {
   type ActiveTrip,
 } from "./focus";
 import { emptySaved, readSaved, writeSaved, type Saved } from "./storage";
+import { updateQuizDrafts, type QuizDraft, type QuizQuestion } from "./quizDrafts";
+import { analyzeSession, knowledgeGaps, reviewPlan } from "./learning";
 import {
   localDayKey,
   millisecondsUntilNextLocalDay,
@@ -70,14 +73,6 @@ const date = (time: number) =>
     minute: "2-digit",
   });
 type MaterialInfo = { name: string; size: number; type: string; status: string; message: string };
-type Question = {
-  id: string;
-  question: string;
-  options: string[];
-  correct_index?: number;
-  correctAnswerIndex?: number;
-  explanation: string;
-};
 export default function AdventureApp() {
   const { user, bootstrap, ready } = useAuthStore();
   useEffect(() => {
@@ -126,9 +121,6 @@ function AdventureWorkspace() {
     [name, setName] = useState("");
   const [confirm, setConfirm] = useState<"finish" | "leave" | "reset" | null>(null),
     [summary, setSummary] = useState<Session | null>(null);
-  const [questions, setQuestions] = useState<Question[]>([]),
-    [answers, setAnswers] = useState<Record<string, number>>({}),
-    [revealed, setRevealed] = useState(false);
   const [topics, setTopics] = useState<{ id: string; name: string }[]>([]);
   const commitRef = useRef<(v: Saved) => boolean>(() => false);
   function commit(value: Saved) {
@@ -294,7 +286,7 @@ function AdventureWorkspace() {
       window.removeEventListener("focus", returned);
     };
   }, [loaded, exclusive, view]);
-  async function run(action: () => Promise<void>) {
+  async function run<T>(action: () => Promise<T>): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -408,6 +400,11 @@ function AdventureWorkspace() {
     ? tick(saved.active, Math.max(now, saved.active.lastAt))
     : null;
   const sessions = [...saved.pending, ...(data?.sessions ?? [])];
+  const summarySession = summary
+    ? sessions.find((session) => session.id === summary.id) ?? summary
+    : view === "summary"
+      ? sessions.find((session) => session.id === saved.summarySessionId) ?? null
+      : null;
   const minutesTotal = Math.floor((carriage?.seconds ?? 0) / 60);
   const go = (next: string) => {
     if (next !== "focus" && current.current.active)
@@ -417,12 +414,13 @@ function AdventureWorkspace() {
     setView(next);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
-  async function mutation(path: string, body: unknown) {
+  async function mutation(path: string, body: unknown): Promise<Snapshot> {
     if (needsLogin) throw new Error("Đăng nhập lại để cập nhật đoàn hoặc đồng bộ trang trí.");
     const id = ownerRef.current;
     const result = await post<Snapshot>(`/adventure/${path}`, body);
-    if (ownerRef.current === id)
+    if (ownerRef.current === id && workspaceLive.current)
       commit({ ...current.current, snapshot: result });
+    return result;
   }
   function start() {
     if (
@@ -480,6 +478,7 @@ function AdventureWorkspace() {
     value.active = null;
     value.notes[s.id] = next.document;
     (value.materials ??= {})[s.id] = next.materials ?? [];
+    value.summarySessionId = s.id;
     if (owner === "guest") {
       try {
         const result = settle(value.local, s, at);
@@ -493,9 +492,6 @@ function AdventureWorkspace() {
     if (commit(value)) {
       setConfirm(null);
       setSummary(s);
-      setQuestions([]);
-      setAnswers({});
-      setRevealed(false);
       go("summary");
       if (online) void run(sync);
     }
@@ -569,26 +565,68 @@ function AdventureWorkspace() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  async function loadQuiz(ai: boolean) {
-    if (!summary || !user) return;
+  async function generateQuiz(session: Session, count: number): Promise<QuizQuestion[]> {
+    if (!user || needsLogin) throw new Error("Đăng nhập lại để tạo quiz AI.");
+    const id = ownerRef.current;
+    if (current.current.summarySessionId !== session.id)
+      throw new Error("Chuyến đã đổi. Hãy mở lại chuyến cần ôn tập.");
     await sync();
-    const text = current.current.notes[summary.id]?.trim();
-    const result = ai
-      ? await post<Question[]>("/quiz/generate", {
-          topic: summary.topic,
-          count: 3,
-          ...(text ? { documentText: text } : {}),
-        })
-      : (
-          await request<{ questions: Question[] }>(
-            `/quizzes?topic_id=${encodeURIComponent(summary.topic)}&limit=3`,
-          )
-        ).questions;
-    if (!result.length)
-      throw new Error("Chủ đề chưa có câu hỏi. Phiên học vẫn đã được lưu.");
-    setQuestions(result);
-    setAnswers({});
-    setRevealed(false);
+    if (ownerRef.current !== id || !workspaceLive.current ||
+        current.current.summarySessionId !== session.id)
+      throw new Error("Chuyến đã đổi trước khi quiz được tạo.");
+    if (current.current.snapshot?.sessions.find((item) => item.id === session.id)?.quiz)
+      throw new Error("Chuyến này đã có điểm. Hãy mở một chuyến ôn tập mới để làm thêm câu hỏi.");
+    const text = current.current.notes[session.id]?.trim();
+    const result = await post<QuizQuestion[]>("/quiz/generate", {
+      topic: session.topic,
+      goal: session.goal,
+      count,
+      ...(text && text.length >= 10 && text.length <= 50000 ? { documentText: text } : {}),
+    });
+    if (ownerRef.current !== id || !workspaceLive.current ||
+        current.current.summarySessionId !== session.id)
+      throw new Error("Chuyến đã đổi trước khi quiz được lưu.");
+    return result;
+  }
+  function saveQuizDraft(ownerId: string, sessionId: string, draft: QuizDraft) {
+    if (!workspaceLive.current || ownerRef.current !== ownerId ||
+        current.current.summarySessionId !== sessionId) return;
+    commitRef.current({
+      ...current.current,
+      quizDrafts: updateQuizDrafts(current.current.quizDrafts, sessionId, draft),
+    });
+  }
+  async function gradeQuiz(sessionId: string, answers: { id: string; selected: number }[]): Promise<Session> {
+    if (!user || needsLogin) throw new Error("Đăng nhập lại để chấm quiz.");
+    const id = ownerRef.current;
+    if (!workspaceLive.current || current.current.summarySessionId !== sessionId)
+      throw new Error("Chuyến đã đổi. Hãy mở lại chuyến cần chấm.");
+    const result = await mutation("quiz", { sessionId, answers });
+    if (ownerRef.current !== id || !workspaceLive.current ||
+        current.current.summarySessionId !== sessionId)
+      throw new Error("Chuyến đã đổi trước khi kết quả quiz được hiển thị.");
+    const graded = result.sessions.find((session) => session.id === sessionId);
+    if (!graded) throw new Error("Máy chủ chưa trả lại chuyến đã chấm.");
+    return graded;
+  }
+  function startReviewTrip(session: Session) {
+    if (current.current.active) {
+      go("focus");
+      setNotice("Chuyến hiện tại vẫn đang chạy. Kết thúc chuyến đó trước khi chuẩn bị chuyến ôn tập.");
+      return;
+    }
+    const plan = reviewPlan(
+      session,
+      current.current.notes[session.id] ?? "",
+      current.current.materials?.[session.id] ?? [],
+    );
+    setGoal(plan.goal);
+    setTopic(plan.topic);
+    setDocumentText(plan.documentText);
+    setMaterials(plan.materials);
+    setMinutes(plan.minutes);
+    setMode(session.groupId && group && session.groupId === group.id ? "group" : "solo");
+    go("ticket");
   }
   const progress = journey
     ? Math.min(100, (journey.remaining / journey.threshold) * 100)
@@ -963,9 +1001,9 @@ function AdventureWorkspace() {
                       </p>
                       <div className="info-box">
                         <h3>Hỗ trợ tập trung</h3>
-                        <p>Mọi chuyến đã lưu sẽ tự công khai trong Lịch sử chuyến đi: mã ẩn danh,
-                          thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm quiz sau khi hoàn tất.
-                          Email tài khoản và nội dung tài liệu học được giữ riêng.</p>
+                        <p>Mọi chuyến đã lưu, kể cả chuyến kết thúc sớm, sẽ tự công khai trong Lịch sử chuyến đi:
+                          mã ẩn danh, chủ đề, tóm tắt mục tiêu, thời gian, số lần xao nhãng và điểm quiz.
+                          Email tài khoản, tài liệu, lời giải và chi tiết trả lời được giữ riêng.</p>
                         <p>
                           Khi bạn rời cửa sổ, đồng hồ vẫn tiếp tục nhưng khoảng đó được ghi là
                           xao nhãng và không cộng vào thời gian học. Khi quay lại, phiên tiếp
@@ -1406,7 +1444,7 @@ function AdventureWorkspace() {
                           <h2>Lời mời & quyền riêng tư</h2>
                           <p>
                             Chỉ tên toa và trang trí được chia sẻ. Đoàn không
-                            thấy tài liệu, điểm quiz hay chi tiết gián đoạn.
+                            thấy tài liệu, lời giải hay chi tiết trả lời quiz.
                           </p>
                           {group.owner === user.id && (
                             <>
@@ -1555,36 +1593,47 @@ function AdventureWorkspace() {
                   <Heading
                     kicker="NHỮNG CHẶNG ĐƯỜNG ĐÃ QUA"
                     title="Nỗ lực của bạn, được giữ lại."
-                    text="Phiên ngắn hay dài đều có giá trị. Chỉ bạn thấy mục tiêu và kết quả học của mình."
+                    text="Phiên ngắn hay dài đều có giá trị. Mục tiêu tóm tắt và điểm quiz sẽ xuất hiện trong lịch sử công khai."
                   />
                   {sessions.length ? (
                     <div className="session-list">
-                      {sessions.map((s) => (
-                        <button
-                          key={s.id}
-                          className="session-row"
-                          onClick={() => {
-                            setSummary(s);
-                            setQuestions([]);
-                            setAnswers({});
-                            setRevealed(false);
-                            go("summary");
-                          }}
-                        >
-                          <span className="feature-icon green">▤</span>
-                          <div>
-                            <h3>{s.goal}</h3>
-                            <p>
-                              {date(s.ended)} ·{" "}
-                              {s.groupId ? "Đóng góp cho đoàn" : "Cá nhân"} ·{" "}
-                              {saved.pending.some((p) => p.id === s.id)
-                                ? "Chờ đồng bộ"
-                                : "Đã lưu"}
-                            </p>
-                          </div>
-                          <strong>{Math.floor(s.seconds / 60)} phút ↗</strong>
-                        </button>
-                      ))}
+                      {sessions.map((s) => {
+                        const analysis = analyzeSession(s);
+                        const gaps = knowledgeGaps(s.quiz);
+                        return (
+                          <button
+                            key={s.id}
+                            className="session-row"
+                            onClick={() => {
+                              setSummary(s);
+                              commitRef.current({ ...current.current, summarySessionId: s.id });
+                              go("summary");
+                            }}
+                          >
+                            <span className="feature-icon green">▤</span>
+                            <div className="session-row-content">
+                              <h3>{s.goal}</h3>
+                              <p>
+                                {date(s.ended)} ·{" "}
+                                {s.groupId ? "Đóng góp cho đoàn" : "Cá nhân"} ·{" "}
+                                {saved.pending.some((p) => p.id === s.id)
+                                  ? "Chờ đồng bộ"
+                                  : "Đã lưu"}
+                              </p>
+                              <div className="session-analysis">
+                                <span>{analysis.focusLabel} · {analysis.focusPercent === null ? "—" : `${Math.floor(analysis.focusPercent)}%`} tập trung</span>
+                                <span>Số lần xao nhãng: <b>{analysis.distractions}</b></span>
+                                <span>Điểm {s.quiz ? `${s.quiz.score}/${s.quiz.total}` : "Chưa làm"}</span>
+                                <span>{s.quiz?.feedback
+                                  ? gaps.length ? `${gaps.length} nội dung cần ôn lại` : "Chưa ghi nhận câu sai trong bộ này"
+                                  : analysis.knowledgeLabel}</span>
+                                <small>{analysis.focusExplanation}</small>
+                              </div>
+                            </div>
+                            <strong>{Math.floor(s.seconds / 60)} phút ↗</strong>
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : (
                     <Empty
@@ -1601,142 +1650,85 @@ function AdventureWorkspace() {
               )}
               {view === "experiments" && <ExperimentResults />}
               {view === "summary" &&
-                (summary ? (
+                (summarySession ? (
                   <>
                     <Heading
                       kicker="MỖI PHÚT ĐỀU CÓ Ý NGHĨA"
                       title="Thêm một chặng đường đáng nhớ."
-                      text={summary.goal}
+                      text={summarySession.goal}
                     />
-                    <div className="stat-row">
+                    <div className="stat-row summary-stats">
                       <Stat
                         icon="◷"
-                        label="THỜI GIAN HỢP LỆ"
-                        value={clock(summary.seconds)}
-                        detail="Đã loại thời gian rời phiên học"
+                        label="THỜI GIAN TẬP TRUNG"
+                        value={clock(summarySession.seconds)}
+                        detail="Đã loại khoảng xao nhãng"
                       />
                       <Stat
                         icon="✦"
                         label="KINH NGHIỆM TOA"
-                        value={`${Math.floor(summary.seconds / 60)} XP`}
-                        detail="Phần giây lẻ vẫn được tích lũy"
+                        value={`${Math.floor(summarySession.seconds / 60)} XP`}
+                        detail="1 phút tập trung = 1 XP · XP ghi nhận nỗ lực, không đo mức độ thành thạo"
+                      />
+                      <Stat
+                        icon="↗"
+                        label="SỐ LẦN XAO NHÃNG"
+                        value={`${summarySession.distractions ?? summarySession.segments.filter(segment => segment.kind === "distraction").length}`}
+                        detail="Mỗi lần rời phiên được ghi nhận một lần"
                       />
                       <Stat
                         icon="⚑"
                         label="TRẠNG THÁI"
                         value={
-                          saved.pending.some((s) => s.id === summary.id)
+                          saved.pending.some((s) => s.id === summarySession.id)
                             ? "Đang chờ"
                             : "Đã lưu"
                         }
                         detail="Quiz không chặn lưu thành quả"
                       />
                     </div>
-                    <p className="muted">
-                      {summary.distractions ?? summary.segments.filter(segment => segment.kind === "distraction").length} lần xao nhãng ·
-                      Đồng hồ vẫn chạy khi rời phiên học.
-                    </p>
                     <section className="panel">
                       <h2>Mang kiến thức theo chuyến đi</h2>
-                      {!!saved.materials?.[summary.id]?.length && <details className="material-history"><summary>Tài liệu của chuyến · {saved.materials[summary.id].length} tệp</summary><ul className="material-list">{saved.materials[summary.id].map((file, i) => <li key={`${i}:${file.name}`}><strong>{file.name}</strong><span>{file.message}</span></li>)}</ul></details>}
+                      {!!saved.materials?.[summarySession.id]?.length && <details className="material-history"><summary>Tài liệu của chuyến · {saved.materials[summarySession.id].length} tệp</summary><ul className="material-list">{saved.materials[summarySession.id].map((file, i) => <li key={`${i}:${file.name}`}><strong>{file.name}</strong><span>{file.message}</span></li>)}</ul></details>}
                       <p>
                         Ôn lại một chút trước khi nghỉ. Làm sau cũng được; phần
                         học của bạn đã được lưu.
                       </p>
-                      {!user || needsLogin ? (
-                        <button onClick={() => go("account")}>
-                          Đăng nhập để dùng ngân hàng quiz và AI
-                        </button>
-                      ) : !questions.length ? (
-                        <div className="choice-row">
-                          <button
-                            disabled={busy}
-                            onClick={() => void run(() => loadQuiz(false))}
-                          >
-                            Lấy quiz chủ đề
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => void run(() => loadQuiz(true))}
-                          >
-                            Tạo quiz với Gemini
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="quiz">
-                          {questions.map((q, i) => (
-                            <fieldset key={q.id}>
-                              <legend>
-                                {i + 1}. {q.question}
-                              </legend>
-                              {q.options.map((option, index) => (
-                                <label
-                                  key={index}
-                                  className={`answer ${revealed && index === (q.correct_index ?? q.correctAnswerIndex) ? "correct" : ""}`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={q.id}
-                                    disabled={revealed}
-                                    checked={answers[q.id] === index}
-                                    onChange={() =>
-                                      setAnswers({ ...answers, [q.id]: index })
-                                    }
-                                  />
-                                  {option}
-                                </label>
-                              ))}
-                              {revealed && (
-                                <p className="info-box">{q.explanation}</p>
-                              )}
-                            </fieldset>
-                          ))}
-                          <button
-                            className="primary"
-                            disabled={
-                              busy ||
-                              revealed ||
-                              Object.keys(answers).length !== questions.length
-                            }
-                            onClick={() =>
-                              void run(async () => {
-                                await mutation("quiz", {
-                                  sessionId: summary.id,
-                                  answers: questions.map((q) => ({
-                                    id: q.id,
-                                    selected: answers[q.id],
-                                  })),
-                                });
-                                setRevealed(true);
-                              })
-                            }
-                          >
-                            Xác nhận & xem giải thích
-                          </button>
-                        </div>
-                      )}
+                      <QuizPanel
+                        key={`${owner}:${summarySession.id}`}
+                        ownerId={owner}
+                        session={summarySession}
+                        draft={saved.quizDrafts?.[summarySession.id]}
+                        canUseAI={!!user && !needsLogin}
+                        needsLogin={needsLogin}
+                        onGenerate={(count) => generateQuiz(summarySession, count)}
+                        onSaveDraft={(draft) => saveQuizDraft(owner, summarySession.id, draft)}
+                        onGrade={(answers) => gradeQuiz(summarySession.id, answers)}
+                        onLogin={() => go("account")}
+                        onStartReview={() => startReviewTrip(summarySession)}
+                      />
                     </section>
                     <section className="panel experiment-share">
                       <h2>Chuyến đi trong lịch sử công khai</h2>
-                      <p>Mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm quiz
+                      <p>Mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu, số lần xao nhãng và điểm
                         được tự cập nhật. Chuyến kết thúc sớm cũng được ghi nhận.</p>
                       <p role="status">{owner === "guest"
-                        ? saved.guestPublished?.includes(summary.id)
+                        ? saved.guestPublished?.includes(summarySession.id)
                           ? "Chuyến đã xuất hiện trong Lịch sử chuyến đi."
-                          : guestPublication[summary.id]?.status === "save-failed"
+                          : guestPublication[summarySession.id]?.status === "save-failed"
                             ? "Máy chủ đã ghi nhận chuyến; thiết bị chưa lưu được xác nhận. Gửi lại sẽ không tạo chuyến trùng."
-                            : guestPublication[summary.id]?.status === "sending"
+                            : guestPublication[summarySession.id]?.status === "sending"
                               ? "Đang gửi chuyến vào lịch sử…"
-                              : guestPublication[summary.id]?.status === "failed"
-                                ? `Chuyến vẫn được lưu trên thiết bị. ${guestPublication[summary.id].message}`
+                              : guestPublication[summarySession.id]?.status === "failed"
+                                ? `Chuyến vẫn được lưu trên thiết bị. ${guestPublication[summarySession.id].message}`
                                 : "Chuyến đã lưu trên thiết bị và sẽ xuất hiện khi gửi thành công."
                         : needsLogin ? "Đăng nhập lại để đồng bộ chuyến vào lịch sử."
-                          : saved.pending.some(session => session.id === summary.id)
+                          : saved.pending.some(session => session.id === summarySession.id)
                             ? "Chuyến đang chờ đồng bộ lên máy chủ."
                             : "Chuyến đã xuất hiện trong Lịch sử chuyến đi."}</p>
                       <div className="choice-row">
                         <button onClick={() => go("experiments")}>Xem Lịch sử chuyến đi →</button>
-                        {(owner === "guest" ? !saved.guestPublished?.includes(summary.id) : saved.pending.some(session => session.id === summary.id)) &&
+                        {(owner === "guest" ? !saved.guestPublished?.includes(summarySession.id) : saved.pending.some(session => session.id === summarySession.id)) &&
                           <button disabled={busy || !online || needsLogin} onClick={() => void run(sync)}>Thử đồng bộ lại</button>}
                       </div>
                     </section>
@@ -1884,10 +1876,10 @@ function AdventureWorkspace() {
                       bạn bấm tạo quiz. Dữ liệu học của tài khoản được lưu trên
                       máy chủ; đoàn chỉ xem toa và tiến độ chung.
                     </p>
-                    <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, thời gian, tóm tắt mục tiêu,
+                    <p>Mọi chuyến đã lưu tự công khai mã chuyến ẩn danh, chủ đề, thời gian, tóm tắt mục tiêu,
                       số lần xao nhãng và điểm quiz trong Lịch sử chuyến đi, gồm cả chuyến kết thúc sớm.
-                      Phiên offline xuất hiện sau khi gửi thành công. Email tài khoản, tên tài khoản
-                      và nội dung tài liệu không xuất hiện trong lịch sử công khai.</p>
+                      Phiên offline xuất hiện sau khi gửi thành công. Email tài khoản, tên tài khoản,
+                      tài liệu, lời giải và chi tiết trả lời không xuất hiện trong lịch sử công khai.</p>
                     <p>
                       Ở chế độ khách, tiến độ và tài liệu được giữ trong trình duyệt này;
                       kết quả chuyến được gửi tự động vào lịch sử công khai khi có mạng.

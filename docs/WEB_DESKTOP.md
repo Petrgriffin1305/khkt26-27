@@ -44,7 +44,7 @@ npm --prefix backend run build
 npm --prefix backend start
 ```
 
-`GEMINI_API_KEY` chỉ nằm trên backend. Không có key thì quiz tĩnh vẫn dùng được; lỗi quiz không hủy phiên học.
+`GEMINI_API_KEY` chỉ nằm trên backend. Không có key thì tính năng tạo câu hỏi AI chưa dùng được; phiên học vẫn lưu bình thường, không thay bằng bộ câu hỏi có sẵn.
 
 ## Chạy thử bằng Electron
 
@@ -80,7 +80,7 @@ Electron dùng origin `viendu://app`, renderer sandbox, context isolation và CS
 
 - Thời gian gợi ý 15/25/45/60 phút và ô tùy chỉnh 1–240 phút tại ga chính lẫn tấm vé; chặn số thập phân và giá trị ngoài giới hạn.
 - Nút 2D/3D tại ga chính, bản đồ và ngay trong phiên học. Bản đồ nhìn từ trên xuống có đầu tàu, số toa theo thành viên thực tế, chọn toa xem tên/màu, phóng to/thu nhỏ, tìm tàu và hai tuyến núi/bờ biển. Góc nhìn không thay đổi đồng hồ. Vị trí phiên cá nhân có xem trước thời gian học chưa lưu; tiến độ đoàn dùng số đã được máy chủ xác nhận.
-- 12 chủ đề học, gồm khoa học, ngôn ngữ, lịch sử, nghệ thuật và kỹ năng học; mỗi chủ đề có 3 câu hỏi tĩnh sau khi chạy seed.
+- 12 chủ đề học, gồm khoa học, ngôn ngữ, lịch sử, nghệ thuật và kỹ năng học; seed chỉ tạo chủ đề, không tạo bộ câu hỏi có sẵn.
 - Cá nhân, toa với 4 màu/3 trang trí, 5 trạm, ngã rẽ có bình chọn 24 giờ.
 - Nhóm riêng tối đa 6 thành viên; tạo, mời, thu hồi, gia nhập, rời và chuyển quyền.
 - Phiên học không có nút tạm nghỉ hoặc nút tự phân loại xao nhãng. Mỗi lần rời cửa sổ/ẩn tab/chuyển sang mục khác được tính một lần xao nhãng; các sự kiện cùng một lần rời không bị tính trùng. Đồng hồ vẫn chạy liên tục tới hạn, kể cả khi rời phiên hoặc tải lại. Quay lại tiếp tục ngay, không chờ 120 giây. Phiên cũ đang tạm nghỉ/chờ được chuyển sang cơ chế này và giữ phần học đã lưu.
@@ -89,7 +89,9 @@ Electron dùng origin `viendu://app`, renderer sandbox, context isolation và CS
 - Cho chọn mọi loại tệp, nhiều tệp cùng lúc. Word DOCX, PowerPoint PPTX, Excel XLSX/XLS, PDF, OpenDocument và các định dạng văn bản phổ biến được đọc ngay trên thiết bị. Giới hạn 20 MB/tệp, 10 tệp/chuyến và tổng 50.000 ký tự. Định dạng chưa có bộ đọc (ví dụ DOC/PPT cũ, ảnh, video) được ghi tên và báo chưa trích xuất; không đưa dữ liệu nhị phân vào quiz. PDF worker dùng file cùng origin, không tải từ CDN.
 - Hàng đợi offline có mã phiên cố định; retry không cấp trùng. Máy chủ kiểm tra thời gian, chồng phiên, quyền đoàn, cap 60 phút/ngày theo múi giờ đoàn, giữ phần lẻ và dư tại đích.
 - Đoàn chỉ thấy toa và tiến độ chung, không có mục tiêu, tài liệu, quiz hoặc log gián đoạn của người khác.
-- Quiz tĩnh/Gemini là tùy chọn; kết quả được chấm trên máy chủ và ghi một lần.
+- Tạo câu hỏi bằng AI là tùy chọn, chọn 1–30 câu từ chủ đề, mục tiêu và tài liệu của phiên. Câu trả lời đang làm được lưu theo tài khoản trên thiết bị. Kết quả và giải thích từng câu được chấm trên máy chủ và ghi một lần. Câu sai chỉ ra các kiến thức cần ôn trong bộ câu đã làm; có lựa chọn mở một phiên mới để ôn lại, giữ tài liệu và chủ đề. Kết quả cũ chỉ có điểm không thể dựng lại các câu sai.
+- Nhật ký học tập hiển thị rõ số lần xao nhãng, tỷ lệ thời gian tập trung trên thời gian thực tế đã học và điểm câu hỏi riêng biệt. Nhãn mức tập trung dùng các ngưỡng mô tả 80% và 50%; không phải chẩn đoán hay điểm học lực chung.
+- Kinh nghiệm toa (XP) ghi nhận nỗ lực: 60 giây học hợp lệ = 1 XP, phần giây lẻ cộng dồn. Điểm câu hỏi không đổi XP; thời gian rời phiên không tạo XP.
 - Mục Lịch sử chuyến đi tự công khai mọi phiên đã lưu trên máy chủ, gồm cả phiên cũ và phiên kết thúc sớm: mã chuyến ẩn danh riêng, thời điểm bắt đầu/kết thúc, tóm tắt mục tiêu tối đa 200 ký tự, chủ đề, thời lượng, số lần xao nhãng và điểm quiz sau khi chấm. Phiên tài khoản xuất hiện sau đồng bộ; phiên khách được gửi tự động khi có mạng, giữ tiến độ khách riêng trên thiết bị. Thời gian tập trung được tính từ các khoảng học hợp lệ; điểm quiz chỉ do máy chủ chấm. Phiên chưa làm quiz hiện “Chưa làm”. Có phân trang và CSV tối đa 10.000 phiên gần nhất. Không có thao tác chọn chia sẻ hoặc ẩn từng phiên; email, mã tài khoản, tên tài khoản và nội dung tài liệu học vẫn riêng tư. Thông báo công khai xuất hiện trên tấm vé trước khi học, trong tổng kết và mục quyền riêng tư.
 - Web Locks ngăn hai cửa sổ cùng sửa trạng thái cá nhân. Có xuất bản sao dữ liệu riêng.
 - Cảnh 3D và bộ đọc tài liệu tải riêng; giới hạn pixel ratio, tự dừng khi ngoài viewport/ẩn cửa sổ, hỗ trợ reduced motion và ảnh SVG khi WebGL không khả dụng. Không có nút dừng hiệu ứng trong giao diện.
@@ -97,6 +99,6 @@ Electron dùng origin `viendu://app`, renderer sandbox, context isolation và CS
 
 ## Giới hạn phát hành cần biết
 
-Ứng dụng hiện hỗ trợ học cá nhân, nhóm bất đồng bộ và quiz tĩnh; quiz AI cần `GEMINI_API_KEY` trên backend. Đồng bộ tài khoản và nhóm cần backend hoạt động. Chưa có học nhóm trực tiếp, và bản desktop không tự đóng ứng dụng khác trên máy.
+Ứng dụng hiện hỗ trợ học cá nhân, nhóm bất đồng bộ và câu hỏi AI; câu hỏi AI cần `GEMINI_API_KEY` trên backend. Đồng bộ tài khoản và nhóm cần backend hoạt động. Chưa có học nhóm trực tiếp, và bản desktop không tự đóng ứng dụng khác trên máy.
 
 Backend dùng aggregate JSONB có row lock để quyết toán thành viên và ledger trong giao dịch. Thiết kế này phù hợp pilot nhóm nhỏ; cần phân tách aggregate theo journey và lập chính sách lưu/xóa dữ liệu trước khi mở rộng quy mô. Kiểm chứng thời gian dựa trên tự khai báo, không phải chống gian lận tuyệt đối. Quiz AI live cần key; Windows installer cần thử trên máy Windows thật.

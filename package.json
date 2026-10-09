@@ -1,6 +1,6 @@
 {
   "name": "viendu",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "dependencies": {
     "officeparser": "8.1.1",
     "react": "19.2.3",

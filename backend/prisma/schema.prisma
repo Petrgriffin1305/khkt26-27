@@ -72,6 +72,7 @@ model QuizQuestion {
   options       Json
   correct_index Int
   explanation   String
+  knowledge_point String?
   difficulty    String @default("medium")
   source        String @default("static")
   created_at    DateTime @default(now())

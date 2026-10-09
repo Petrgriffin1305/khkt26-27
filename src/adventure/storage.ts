@@ -1,10 +1,11 @@
 import type { ActiveTrip } from "./focus";
+import { isValidQuizAssessment, isValidQuizDraftMap, type QuizDraft } from "./quizDrafts.ts";
 import {
   emptyWorld,
   type Snapshot,
   type World,
   type Session,
-} from "../../backend/src/adventure/domain";
+} from "../../backend/src/adventure/domain.ts";
 export type Saved = {
   active: ActiveTrip | null;
   pending: Session[];
@@ -13,6 +14,8 @@ export type Saved = {
   notes: Record<string, string>;
   materials?: Record<string, NonNullable<ActiveTrip["materials"]>>;
   guestPublished?: string[];
+  quizDrafts?: Record<string, QuizDraft>;
+  summarySessionId?: string;
 };
 export const emptySaved = (): Saved => ({
   active: null,
@@ -22,6 +25,7 @@ export const emptySaved = (): Saved => ({
   notes: {},
   materials: {},
   guestPublished: [],
+  quizDrafts: {},
 });
 const record = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -50,6 +54,7 @@ function validSession(v: unknown) {
   return record(v) && typeof v.id === "string" && typeof v.userId === "string" &&
     typeof v.goal === "string" && typeof v.topic === "string" &&
     (v.distractions === undefined || count(v.distractions)) &&
+    (v.quiz === undefined || isValidQuizAssessment(v.quiz)) &&
     [v.started, v.ended, v.target, v.seconds, v.contribution].every(number) && validSegments(v.segments);
 }
 function validSaved(v: unknown): v is Saved {
@@ -58,6 +63,9 @@ function validSaved(v: unknown): v is Saved {
       (v.guestPublished !== undefined && (!Array.isArray(v.guestPublished) ||
         !v.guestPublished.every((id) => typeof id === "string" && id.length > 0) ||
         new Set(v.guestPublished).size !== v.guestPublished.length)) ||
+      (v.quizDrafts !== undefined && !isValidQuizDraftMap(v.quizDrafts)) ||
+      (v.summarySessionId !== undefined &&
+        (typeof v.summarySessionId !== "string" || v.summarySessionId.length === 0)) ||
       !Object.values(v.notes).every((note) => typeof note === "string") ||
       !Array.isArray(v.pending) || !v.pending.every(validSession)) return false;
   const w = v.local;

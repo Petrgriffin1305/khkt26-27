@@ -281,7 +281,7 @@ export function adventureRoutes(
             }),
           )
           .min(1)
-          .max(10),
+          .max(30),
       })
       .parse(req.body);
     if (new Set(value.answers.map((a) => a.id)).size !== value.answers.length)
@@ -306,10 +306,24 @@ export function adventureRoutes(
         );
       s.quiz ??= {
         score: value.answers.filter(
-          (a) =>
-            questions.find((q) => q.id === a.id)?.correct_index === a.selected,
+          (answer) =>
+            questions.find((question) => question.id === answer.id)?.correct_index === answer.selected,
         ).length,
         total: value.answers.length,
+        feedback: value.answers.map((answer) => {
+          const question = questions.find((item) => item.id === answer.id)!;
+          const options = z.array(z.string()).parse(question.options);
+          return {
+            questionId: question.id,
+            question: question.question,
+            options,
+            selected: answer.selected,
+            correctIndex: question.correct_index,
+            correct: question.correct_index === answer.selected,
+            explanation: question.explanation,
+            knowledgePoint: question.knowledge_point ?? question.question,
+          };
+        }),
       };
       return snapshot(w, req.userId, Date.now());
     });

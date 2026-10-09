@@ -41,7 +41,7 @@ export function ExperimentResults() {
     {error && <p role="alert" className="info-box">{error}</p>}
     {data && <><p>{data.total} chuyến công khai · Chuyến offline xuất hiện sau khi gửi thành công. Lịch sử cập nhật mỗi 30 giây.</p>
       {data.runs.length ? <div className="experiment-table-wrap"><table className="experiment-table"><caption>Lịch sử các chuyến học</caption>
-        <thead><tr><th>Mã chuyến</th><th>Thời gian</th><th>Mục tiêu / Chủ đề</th><th>Thời lượng</th><th>Tập trung</th><th>Xao nhãng</th><th>Điểm quiz</th></tr></thead>
+        <thead><tr><th>Mã chuyến</th><th>Thời gian</th><th>Mục tiêu / Chủ đề</th><th>Thời lượng</th><th>Tập trung</th><th>Xao nhãng</th><th>Điểm</th></tr></thead>
         <tbody>{data.runs.map(r => <tr key={r.id}><td><strong>{r.tripCode}</strong><br/><small>{r.testerCode}</small></td>
           <td><time dateTime={r.startedAt}>Bắt đầu: {time(r.startedAt)}</time><br/><time dateTime={r.endedAt}>Kết thúc: {time(r.endedAt)}</time></td>
           <td className="experiment-goal"><strong>{r.goalSummary}</strong><br/><small>{studyTopics.find(t => t.id === r.topic)?.name ?? r.topic}</small></td>

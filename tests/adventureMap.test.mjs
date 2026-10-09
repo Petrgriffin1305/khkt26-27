@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mapGeometry, stopIndices } from "../src/adventure/mapGeometry.ts";
 import { studyTopics } from "../backend/src/adventure/topics.ts";
-import { extraQuizBank } from "../backend/prisma/extraQuizBank.ts";
 
 test("six carriages fit behind the engine at the first station", () => {
   const geometry = mapGeometry();
@@ -27,19 +26,12 @@ test("both branches visit the same five stations with different tracks", () => {
   assert.equal(mountain.position(-100).x, 35);
   assert.equal(coast.position(Infinity).x, 965);
 });
-test("every new study topic has three valid fallback quiz questions", () => {
+test("every study topic has unique valid metadata", () => {
   assert.equal(studyTopics.length, 12);
   assert.equal(new Set(studyTopics.map((t) => t.id)).size, 12);
-  for (const topic of studyTopics.slice(3)) {
-    assert.equal(extraQuizBank[topic.id].length, 3);
-    for (const [question, options, answer, explanation] of extraQuizBank[
-      topic.id
-    ]) {
-      assert.ok(question && explanation);
-      assert.equal(options.length, 4);
-      assert.ok(
-        Number.isInteger(answer) && answer >= 0 && answer < options.length,
-      );
-    }
+  for (const topic of studyTopics) {
+    assert.match(topic.id, /^[a-z0-9-]+$/);
+    assert.ok(topic.name.trim());
+    assert.ok(topic.icon.trim());
   }
 });
