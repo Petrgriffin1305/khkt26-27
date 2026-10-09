@@ -1729,5 +1729,6 @@ body {
 .experiment-export { display: inline-flex; align-items: center; padding: 12px 16px; border: 1px solid #d7e0d5; border-radius: 8px; color: #30463f; text-decoration: none; }
 .experiment-share { margin: 24px 0; }
 .experiment-goal { min-width: 220px; max-width: 340px; overflow-wrap: anywhere; }
+.experiment-results .page-heading { display: block; }
 .experiment-table time { white-space: nowrap; }
 .experiment-table td { vertical-align: top; }
