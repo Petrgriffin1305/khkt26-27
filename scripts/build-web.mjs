@@ -1,52 +1,20 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { loadEnv } from "vite";
 
-const root = new URL("../dist/", import.meta.url);
-const distDirectory = fileURLToPath(root);
+// Match Vite's production parsing, expansion, process-env priority, and blanks.
+// Use cwd so packaging tests can build an isolated fixture with the real tools.
+const distDirectory = resolve("dist");
+const root = pathToFileURL(`${distDirectory}/`);
 const configName = "desktop-config.json";
-
-function parseDotEnv(text) {
-  const match = /^\s*(?:export\s+)?EXPO_PUBLIC_API_URL\s*=\s*(.*?)\s*$/m.exec(text);
-  if (!match) return undefined;
-
-  let value = match[1].trim();
-  const quotedValue = /^(['"])(.*?)\1(?:\s+#.*)?$/.exec(value);
-  if (quotedValue) {
-    value = quotedValue[2];
-  } else {
-    value = value.replace(/\s+#.*$/, "").trim();
-  }
-  return value || undefined;
-}
-
-async function getPublicApiUrl() {
-  const fromEnvironment = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (fromEnvironment) return fromEnvironment;
-
-  for (const file of [
-    "../.env.production.local",
-    "../.env.local",
-    "../.env.production",
-    "../.env",
-  ]) {
-    try {
-      const value = parseDotEnv(await readFile(new URL(file, import.meta.url), "utf8"));
-      if (value) return value;
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
-  return undefined;
-}
-
-const apiUrl = await getPublicApiUrl();
+const apiUrl = loadEnv("production", process.cwd(), "VITE_").VITE_API_URL?.trim();
 let apiOrigin = null;
 if (apiUrl) {
   const parsed = new URL(apiUrl);
   if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("EXPO_PUBLIC_API_URL must use HTTP or HTTPS.");
+    throw new Error("VITE_API_URL must use HTTP or HTTPS.");
   }
   apiOrigin = parsed.origin;
 }
@@ -77,7 +45,7 @@ async function collect(directory, prefix = "") {
 await collect(distDirectory);
 files.sort();
 if (!files.includes("/index.html")) {
-  throw new Error("Expo web export is missing dist/index.html.");
+  throw new Error("Web build is missing dist/index.html.");
 }
 
 const index = new URL("index.html", root);

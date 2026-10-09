@@ -15,7 +15,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:mobile
+      - run: npm run test:web
       - run: npm ci
         working-directory: backend
       - run: npm run db:generate
@@ -28,6 +28,6 @@ jobs:
         working-directory: backend
       - run: npm run build:web
         env:
-          # Metro's first OfficeParser transform exceeds the runner's default 2 GB heap.
+          # Leave headroom for the large OfficeParser browser dependency.
           NODE_OPTIONS: --max-old-space-size=4096
       - run: docker build -t pomodoro-api backend

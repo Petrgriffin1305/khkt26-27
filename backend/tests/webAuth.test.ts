@@ -21,28 +21,6 @@ const authDeps = vi.hoisted(() => {
   };
 });
 
-const setupState = vi.hoisted(() => {
-  const state: {
-    ownerId: string | null;
-    reset: ReturnType<typeof vi.fn>;
-    setOwnerId: ReturnType<typeof vi.fn>;
-    rehydrate: ReturnType<typeof vi.fn>;
-  } = {
-    ownerId: null,
-    reset: vi.fn(),
-    setOwnerId: vi.fn(),
-    rehydrate: vi.fn(),
-  };
-  state.reset.mockImplementation(() => {
-    state.ownerId = null;
-  });
-  state.setOwnerId.mockImplementation((id: string) => {
-    state.ownerId = id;
-  });
-  state.rehydrate.mockResolvedValue(undefined);
-  return state;
-});
-
 vi.mock("@/services/api", () => ({
   acceptTokens: authDeps.acceptTokens,
   ApiError: authDeps.ApiError,
@@ -58,17 +36,6 @@ vi.mock("@/services/api", () => ({
 vi.mock("@/services/tokenStorage", () => ({
   tokenStorage: {
     get: authDeps.getRefreshToken,
-  },
-}));
-
-vi.mock("../../src/store/setupStore", () => ({
-  useSetupStore: {
-    persist: { rehydrate: setupState.rehydrate },
-    getState: () => ({
-      ownerId: setupState.ownerId,
-      reset: setupState.reset,
-      setOwnerId: setupState.setOwnerId,
-    }),
   },
 }));
 
@@ -101,13 +68,12 @@ const tokens = {
 describe("web account persistence", () => {
   let local: MemoryStorage;
   let session: MemoryStorage;
-  let useAuthStore: typeof import("../../src/store/authStore.web").useAuthStore;
+  let useAuthStore: typeof import("../../src/store/authStore").useAuthStore;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
     authDeps.expiredHandler = undefined;
-    setupState.ownerId = null;
     local = new MemoryStorage();
     session = new MemoryStorage();
     Object.defineProperty(globalThis, "localStorage", {
@@ -125,7 +91,7 @@ describe("web account persistence", () => {
     authDeps.clearTokens.mockImplementation(async () => {
       session.removeItem("viendu.refresh");
     });
-    const module = await import("../../src/store/authStore.web");
+    const module = await import("../../src/store/authStore");
     useAuthStore = module.useAuthStore;
   });
 
@@ -139,7 +105,6 @@ describe("web account persistence", () => {
     expect(useAuthStore.getState().needsLogin).toBe(true);
     expect(authDeps.restoreTokens).not.toHaveBeenCalled();
     expect(authDeps.request).not.toHaveBeenCalled();
-    expect(setupState.setOwnerId).toHaveBeenCalledWith(user.id);
   });
 
   it("keeps the cached owner and requires login after the server rejects refresh", async () => {
@@ -197,7 +162,6 @@ describe("web account persistence", () => {
     expect(session.getItem("viendu.refresh")).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().needsLogin).toBe(false);
-    expect(setupState.reset).toHaveBeenCalled();
   });
 
   it("ignores incomplete cached identity instead of assigning a local owner", async () => {
@@ -253,7 +217,6 @@ describe("web account persistence", () => {
     await bootstrap;
     expect(useAuthStore.getState().user).toEqual(nextUser);
     expect(useAuthStore.getState().ready).toBe(true);
-    expect(setupState.ownerId).toBe(nextUser.id);
     expect(authDeps.clearTokens).not.toHaveBeenCalled();
   });
 

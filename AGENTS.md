@@ -1,41 +1,27 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+This repository contains Viễn Du: a React DOM + Vite web application, an
+Electron desktop package, and a Fastify API. Use npm and Node.js >=22.13.
 
-## Expo has changed — do not trust your training data
+## Layout and commands
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+- `src/main.tsx` mounts `src/adventure/AdventureApp.tsx` directly.
+- `src/adventure/` owns the UI, journey, focus rules, browser navigation, and local state.
+- `src/services/` owns browser credentials, shared contracts, and API access.
+- `backend/` owns authentication, quizzes, groups, storage, and the API.
+- `desktop/` packages the same `dist/` web build into Electron.
+- `npm start`, `npm run dev`, or `npm run web`: open Viễn Du at localhost:8084.
+- `npm run lint`, `npm run typecheck`, `npm run test:web`: frontend checks.
+- `npm run build:web`: production web build, PDF worker, and offline shell.
+- `npm --prefix backend run dev:local`: local API + database.
+- `npm --prefix desktop start`: Electron after building the web application.
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+Run lint and typecheck before declaring code changes complete. Use official,
+current documentation before changing Vite, React, or Electron APIs.
 
-## Commands
+## Invariants
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
-
-```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
-```
-
-Run lint and typecheck before declaring any task done.
-
-## Navigation & Routing
-
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
-
-## Building with EAS
-
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
-
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+Preserve owner-scoped local storage and the exclusive Web Lock. URL navigation
+must keep the active workspace mounted and classify time away from focus.
+Keep credential writes and account changes generation-safe. Private keys belong
+in backend configuration; `VITE_API_URL` is public and embedded at build time.
+Keep the same-origin PDF worker, offline shell, desktop API-origin configuration,
+and sandboxed `viendu://app/` protocol working together.

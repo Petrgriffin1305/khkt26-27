@@ -1,12 +1,8 @@
-import { Platform } from "react-native";
 import { tokenStorage } from "./tokenStorage";
 import type { Tokens } from "./contracts";
 import { resolveApiUrl } from "./apiUrl";
 
-export const API_URL = resolveApiUrl(
-  process.env.EXPO_PUBLIC_API_URL,
-  Platform.OS,
-);
+export const API_URL = resolveApiUrl(import.meta.env.VITE_API_URL);
 let accessToken: string | null = null;
 let expiresAt = 0;
 let refreshing: { generation: number; promise: Promise<void> } | null = null;

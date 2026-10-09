@@ -1,6 +1,6 @@
 {
-  "name": "pomofocus-desktop",
-  "version": "0.1.2",
+  "name": "viendu-desktop",
+  "version": "0.1.3",
   "private": true,
   "main": "dist/adventureMain.js",
   "scripts": {
@@ -9,8 +9,7 @@
     "test": "npm run build && node --test --test-isolation=none tests/*.test.cjs",
     "start": "npm run build && npm run prepare:web && electron .",
     "prepare:web": "node prepare-web.cjs",
-    "package:win": "npm run build && npm run prepare:web && electron-builder --win nsis --x64",
-    "start:guard": "npm run build && electron dist/main.js"
+    "package:win": "npm run build && npm run prepare:web && electron-builder --win nsis --x64"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
@@ -21,7 +20,7 @@
   "engines": {
     "node": ">=22.13"
   },
-  "description": "Viễn Du — Focus and learning adventure",
+  "description": "Vi\u1ec5n Du \u2014 Focus and learning adventure",
   "author": "Vien Du",
   "build": {
     "appId": "com.viendu.study",

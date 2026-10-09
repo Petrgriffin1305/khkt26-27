@@ -15,7 +15,7 @@ async function start() {
     process.env.REDIS_URL = "redis://127.0.0.1:6379";
     process.env.STORAGE_DRIVER = "local";
     await mkdir(".local-data", { recursive: true });
-    // Keep the local secret so mobile refresh tokens survive a backend restart.
+    // Keep the local secret so account credentials survive a backend restart.
     try {
       process.env.JWT_SECRET = await readFile(".local-data/jwt-secret", "utf8");
     } catch {

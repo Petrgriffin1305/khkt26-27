@@ -1,25 +1,13 @@
-import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
-const KEY = "pomodoro.refresh";
-// Web session is intentionally memory-only. Keychain/Keystore is used on mobile.
-let webToken: string | null = null;
+// Session-only persistence survives reload without keeping a credential after
+// the browser session ends. Never include this value in backups or logs.
+const KEY = "viendu.refresh";
 export const tokenStorage = {
-  get: () =>
-    Platform.OS === "web"
-      ? Promise.resolve(webToken)
-      : SecureStore.getItemAsync(KEY),
-  set: (token: string) => {
-    if (Platform.OS === "web") {
-      webToken = token;
-      return Promise.resolve();
-    }
-    return SecureStore.setItemAsync(KEY, token);
+  get: async () =>
+    typeof window === "undefined" ? null : sessionStorage.getItem(KEY),
+  set: async (token: string) => {
+    sessionStorage.setItem(KEY, token);
   },
-  clear: () => {
-    if (Platform.OS === "web") {
-      webToken = null;
-      return Promise.resolve();
-    }
-    return SecureStore.deleteItemAsync(KEY);
+  clear: async () => {
+    sessionStorage.removeItem(KEY);
   },
 };

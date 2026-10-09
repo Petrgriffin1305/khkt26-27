@@ -1,10 +1,10 @@
 # Viễn Du
 
-Ứng dụng học tập bằng hành trình tàu: web và Windows dùng chung giao diện Expo, có phiên học 1–240 phút, khám phá qua sương mù, toa cá nhân, đoàn bất đồng bộ, nhật ký và quiz tùy chọn. Màn hình native của dự án Expo được giữ riêng.
+Viễn Du is a web learning adventure with a cartoon 3D train journey, personal progress, asynchronous study groups, a journal, and optional quizzes. The browser app is the primary experience; Electron packages the same web app for Windows.
 
-## Chạy thử
+## Run locally
 
-Dùng Node.js 24 LTS và npm 11, cùng phiên bản chính với GitHub Actions. npm 10 đi kèm Node 22 có thể từ chối lockfile khi giải quyết peer dependency.
+Use Node.js 24 LTS and npm 11, matching GitHub Actions. npm 10 may reject the lockfile while resolving peer dependencies.
 
 ```bash
 npm ci
@@ -13,15 +13,26 @@ npm --prefix backend run db:generate
 npm --prefix backend run dev:local
 ```
 
-Ở terminal khác:
+In another terminal, start Viễn Du:
 
 ```bash
-npm run web
+npm start
 ```
 
-Chế độ khách dùng được khi offline. Tạo tài khoản trên backend local để thử đồng bộ, đoàn và quiz ngân hàng. Muốn tạo quiz AI từ tài liệu, đặt `GEMINI_API_KEY` trong `backend/.env`, rồi khởi động lại backend; khóa chỉ dùng trên máy chủ và không đưa vào Git. Tài liệu được đọc trên thiết bị; chỉ văn bản trích xuất được gửi khi chọn quiz AI.
+`npm start` serves the app at `http://localhost:8084` and requires that exact port. `npm run dev` and `npm run web` do the same thing. Keep the terminal open while the server runs. Guest mode works offline. Create a backend account to try sync, groups, and the quiz bank. To generate quizzes from documents with AI, set `GEMINI_API_KEY` in `backend/.env` and restart the backend; the key stays on the server. Documents are read on the device, and only extracted text is sent when choosing an AI quiz.
 
-## Xuất bản web và Windows
+## Preview a production web build
+
+The preview server also requires port 8084. Stop the development server before starting it.
+
+```bash
+npm run build:web
+npm run preview
+```
+
+The production files are written to `dist/`. See [web and Windows operations](docs/WEB_DESKTOP.md) for production hosting details.
+
+## Package the Windows app
 
 ```bash
 npm run build:web
@@ -29,6 +40,12 @@ npm --prefix desktop ci
 npm --prefix desktop run package:win
 ```
 
-Web nằm trong `dist/`, installer nằm trong `desktop/release/`. Cấu hình `EXPO_PUBLIC_API_URL` trước khi build bản kết nối máy chủ online. GitHub Actions tạo cả EXE và ZIP web khi push `main`; tải tại artifact `Vien-Du-Windows` của workflow **Build Windows app**.
+The Windows installer is in `desktop/release/`. Set `VITE_API_URL` in the root `.env` or build environment for an online backend. GitHub Actions builds the installer and a ZIP of the web app on pushes to `main`; download them from the `Vien-Du-Windows` artifact in the **Build Windows app** workflow.
 
-Xem [hướng dẫn vận hành và phạm vi MVP](docs/WEB_DESKTOP.md) để triển khai backend, dùng production export hoặc đóng gói chéo từ macOS.
+To launch the desktop build locally after creating `dist/` and installing desktop dependencies, run this separately. It stays open until you close the Electron app:
+
+```bash
+npm --prefix desktop start
+```
+
+See [web and Windows operations](docs/WEB_DESKTOP.md) for backend deployment and cross-packaging from macOS.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { router, useGlobalSearchParams } from "expo-router";
+import { useBrowserView } from "./navigation";
 import { useAuthStore } from "@/store/authStore";
 import { post, request } from "@/services/api";
 import { Scene } from "./Scene";
@@ -83,9 +83,9 @@ export default function AdventureApp() {
   return <AdventureWorkspace key={user?.id ?? "guest"} />;
 }
 function AdventureWorkspace() {
-  const params = useGlobalSearchParams<{ view?: string }>();
+  const [requestedView, setView] = useBrowserView();
   const views = ["station", "map", "carriage", "group", "journal", "ticket", "focus", "summary", "account"];
-  const view = typeof params.view === "string" && views.includes(params.view) ? params.view : "station";
+  const view = views.includes(requestedView) ? requestedView : "station";
   const { user, login, logout, offline: authOffline, needsLogin } = useAuthStore();
   const owner = user?.id ?? "guest";
   const [saved, setSaved] = useState<Saved>(emptySaved);
@@ -377,7 +377,7 @@ function AdventureWorkspace() {
       commit({ ...current.current, active: leaveFocusView(current.current.active, Date.now()) });
     setError("");
     setNotice("");
-    router.setParams({ view: next });
+    setView(next);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
   async function mutation(path: string, body: unknown) {

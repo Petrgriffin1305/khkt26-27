@@ -1701,10 +1701,9 @@ body,
     display: none !important;
   }
 }
-/* Expo's native ScrollView reset disables document scrolling. This DOM shell
-   uses the document as its scrolling surface on web and desktop. */
+/* Web and desktop use the document as their scrolling surface. */
 body {
-  overflow-y: auto !important;
+  overflow-y: auto;
   overflow-x: hidden;
 }
 

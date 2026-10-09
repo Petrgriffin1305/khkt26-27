@@ -19,17 +19,17 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:mobile
+      - run: npm run test:web
       - run: npm run build:web
         env:
-          # Metro's first OfficeParser transform exceeds the runner's default 2 GB heap.
+          # Leave headroom for the large OfficeParser browser dependency.
           NODE_OPTIONS: --max-old-space-size=4096
-          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
       - run: npm ci --prefix desktop
       - run: npm --prefix desktop run typecheck
       - run: npm --prefix desktop test
       - run: npm --prefix desktop run package:win
-      - name: Package the matching web export
+      - name: Package the matching web build
         shell: pwsh
         run: |
           $version = node -p "require('./desktop/package.json').version"

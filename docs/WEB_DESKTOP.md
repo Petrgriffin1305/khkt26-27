@@ -1,26 +1,28 @@
-# Viễn Du — web app và Windows
+# Viễn Du — web và Windows
 
-Giao diện chính dùng cảnh tàu 3D cartoon bằng Three.js. Web và Electron dùng chung bản export Expo; không phải hai sản phẩm riêng. Chế độ khách lưu cá nhân trên thiết bị, tài khoản dùng API để đồng bộ và tham gia đoàn.
+Ứng dụng Vite trên trình duyệt là trải nghiệm chính. Electron đóng gói cùng bản web đã build trong `dist/`; khách có thể học ngoại tuyến, còn tài khoản dùng API để đồng bộ và tham gia đoàn.
 
 ## Chạy web
 
-Dùng Node 24 LTS và npm 11 như GitHub Actions; npm 10 có thể từ chối lockfile khi giải quyết peer dependency.
+Dùng Node.js 24 LTS và npm 11 như GitHub Actions; npm 10 có thể từ chối lockfile khi giải quyết peer dependency.
 
 ```bash
 npm ci
-npm run web
+npm start
 ```
 
-Bản production:
+`npm start` chạy máy chủ tại `http://localhost:8084` và yêu cầu đúng cổng này; nếu cổng đang bận, máy chủ sẽ báo lỗi thay vì chuyển sang cổng khác. Giữ terminal mở khi dùng ứng dụng. `npm run dev` và `npm run web` là các bí danh tương đương.
+
+Để xem bản production, dừng máy chủ phát triển trước vì preview cũng dùng cổng 8084 và giữ terminal mở:
 
 ```bash
-# Đặt EXPO_PUBLIC_API_URL trong .env hoặc môi trường build.
+# Đặt VITE_API_URL trong .env hoặc môi trường build.
 # Ví dụ https://api.example.com/api/v1 (không chứa khóa bí mật).
 npm run build:web
-npx expo serve --port 8081
+npm run preview
 ```
 
-Đưa thư mục `dist/` lên máy chủ HTTPS có fallback về `index.html` cho SPA. URL API được nhúng khi build; đổi URL cần build lại. Sau lần tải production đầu tiên và khi service worker đã lưu xong bundle, web có thể mở lại khi offline. Service worker chỉ cache giao diện/assets, không cache API hoặc dữ liệu đăng nhập. Bản desktop chứa toàn bộ bundle nên mở được khi offline.
+Đưa thư mục `dist/` lên máy chủ HTTPS có fallback về `index.html` cho SPA. URL API được nhúng khi build; đổi URL cần build lại. Sau lần tải production đầu tiên và khi service worker lưu xong bundle, web có thể mở lại khi offline. Service worker chỉ cache giao diện/assets, không cache API hoặc dữ liệu đăng nhập. Bản desktop chứa toàn bộ bundle nên mở được khi offline.
 
 ## Chạy backend
 
@@ -42,16 +44,25 @@ npm --prefix backend start
 
 `GEMINI_API_KEY` chỉ nằm trên backend. Không có key thì quiz tĩnh vẫn dùng được; lỗi quiz không hủy phiên học.
 
-## Windows .exe
+## Chạy thử bằng Electron
+
+Tạo bản web rồi khởi chạy Electron riêng. Lệnh start giữ terminal mở đến khi đóng ứng dụng:
 
 ```bash
 npm run build:web
 npm --prefix desktop ci
 npm --prefix desktop start
+```
+
+## Windows .exe
+
+```bash
+npm run build:web
+npm --prefix desktop ci
 npm --prefix desktop run package:win
 ```
 
-Installer ở `desktop/release/`. Workflow `.github/workflows/windows.yml` chạy trên Windows, kiểm tra lint/typecheck/tests rồi tạo artifact `Vien-Du-Windows`. Đặt repository variable `EXPO_PUBLIC_API_URL` trước khi build bản dùng API online. Bản chưa ký chứng thư sẽ hiển thị nhà phát hành chưa xác minh trên Windows.
+Installer ở `desktop/release/`. Workflow `.github/workflows/windows.yml` chạy lint, typecheck, kiểm tra web/Electron và tạo artifact `Vien-Du-Windows`. Đặt repository variable `VITE_API_URL` trước khi build bản dùng API online. Bản chưa ký chứng thư sẽ hiển thị nhà phát hành chưa xác minh trên Windows.
 
 Đóng gói installer chưa ký từ macOS khi không có Wine:
 
@@ -61,7 +72,7 @@ npm --prefix desktop run package:win -- -c.win.signAndEditExecutable=false
 
 Lệnh này bỏ cả chỉnh sửa tài nguyên EXE, nên bản đóng gói chéo dùng icon Electron mặc định. Workflow trên Windows không dùng tùy chọn đó. GitHub Actions chạy khi push `main` và tạo ZIP web cùng phiên bản với installer; backend được kiểm tra trong job riêng. File build lớn được lưu tại artifact Actions thay vì đưa vào lịch sử Git.
 
-Electron dùng origin `viendu://app`, renderer sandbox, context isolation, CSP và không có quyền Node/IPC cho giao diện. Module Guard cũ còn là thử nghiệm riêng (`start:guard`); ứng dụng Viễn Du chỉ hỗ trợ phân loại gián đoạn, không tự đóng chương trình đang mở.
+Electron dùng origin `viendu://app`, renderer sandbox, context isolation và CSP. Giao diện không có quyền Node hay IPC; cửa sổ ngoài bị chặn.
 
 ## Quy tắc đã triển khai
 
@@ -83,6 +94,6 @@ Electron dùng origin `viendu://app`, renderer sandbox, context isolation, CSP v
 
 ## Giới hạn phát hành cần biết
 
-Đây là MVP cá nhân và nhóm bất đồng bộ trong mục 11.1 của kế hoạch. Phòng chờ trực tiếp, bonus phối hợp, tín hiệu hỗ trợ và spike chặn app là các mốc tiếp theo trong tài liệu gốc.
+Ứng dụng hiện hỗ trợ học cá nhân, nhóm bất đồng bộ và quiz tĩnh; quiz AI cần `GEMINI_API_KEY` trên backend. Đồng bộ tài khoản và nhóm cần backend hoạt động. Chưa có học nhóm trực tiếp, và bản desktop không tự đóng ứng dụng khác trên máy.
 
-Backend MVP dùng một aggregate JSONB có row lock để quyết toán thành viên và ledger trong giao dịch. Phù hợp pilot nhóm nhỏ; cần phân tách aggregate theo journey và lập chính sách lưu/xóa dữ liệu trước khi mở rộng quy mô. Kiểm chứng thời gian dựa trên tự khai báo, không phải chống gian lận tuyệt đối. Quiz/AI live cần key; Windows installer cần thử trên máy Windows thật.
+Backend dùng aggregate JSONB có row lock để quyết toán thành viên và ledger trong giao dịch. Thiết kế này phù hợp pilot nhóm nhỏ; cần phân tách aggregate theo journey và lập chính sách lưu/xóa dữ liệu trước khi mở rộng quy mô. Kiểm chứng thời gian dựa trên tự khai báo, không phải chống gian lận tuyệt đối. Quiz AI live cần key; Windows installer cần thử trên máy Windows thật.

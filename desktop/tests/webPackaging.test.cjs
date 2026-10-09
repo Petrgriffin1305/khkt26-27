@@ -15,29 +15,24 @@ const { runInNewContext } = require('node:vm');
 
 const projectRoot = resolve(__dirname, '../..');
 
-test('offline worker serves exported image and font files from its cache', async (t) => {
+test('offline worker serves Vite image and font assets from its cache', async (t) => {
   const fixture = mkdtempSync(join(tmpdir(), 'viendu-offline-'));
   t.after(() => rmSync(fixture, { recursive: true, force: true }));
 
-  const scripts = join(fixture, 'scripts');
   const dist = join(fixture, 'dist');
-  mkdirSync(scripts, { recursive: true });
-  mkdirSync(join(dist, '_expo/static/js'), { recursive: true });
-  mkdirSync(join(dist, '_expo/static/css'), { recursive: true });
-  mkdirSync(join(dist, '_expo/static/media'), { recursive: true });
-  cpSync(join(projectRoot, 'scripts/build-web.mjs'), join(scripts, 'build-web.mjs'));
+  mkdirSync(join(dist, 'assets'), { recursive: true });
   writeFileSync(join(dist, 'index.html'), '<html lang="en"><head></head><body></body></html>');
   writeFileSync(join(dist, 'favicon.ico'), 'icon');
-  writeFileSync(join(dist, '_expo/static/js/app.js'), 'bundle');
-  writeFileSync(join(dist, '_expo/static/css/app.css'), 'style');
-  writeFileSync(join(dist, '_expo/static/media/train.png'), Buffer.from([0, 1, 2, 3]));
-  writeFileSync(join(dist, '_expo/static/media/train map#1.png'), Buffer.from([8, 9, 10]));
-  writeFileSync(join(dist, '_expo/static/media/font.woff2'), Buffer.from([4, 5, 6, 7]));
+  writeFileSync(join(dist, 'assets/app.js'), 'bundle');
+  writeFileSync(join(dist, 'assets/app.css'), 'style');
+  writeFileSync(join(dist, 'assets/train.png'), Buffer.from([0, 1, 2, 3]));
+  writeFileSync(join(dist, 'assets/train map#1.png'), Buffer.from([8, 9, 10]));
+  writeFileSync(join(dist, 'assets/font.woff2'), Buffer.from([4, 5, 6, 7]));
 
-  const build = spawnSync(process.execPath, [join(scripts, 'build-web.mjs')], {
+  const build = spawnSync(process.execPath, [join(projectRoot, 'scripts/build-web.mjs')], {
     cwd: fixture,
     encoding: 'utf8',
-    env: { ...process.env, EXPO_PUBLIC_API_URL: 'http://192.168.1.20:3000/api/v1' },
+    env: { ...process.env, VITE_API_URL: 'http://192.168.1.20:3000/api/v1' },
   });
   assert.equal(build.status, 0, build.stderr);
   assert.deepEqual(
@@ -79,9 +74,9 @@ test('offline worker serves exported image and font files from its cache', async
   await installPromise;
 
   const assetPaths = [
-    '/_expo/static/media/train.png',
-    '/_expo/static/media/train%20map%231.png',
-    '/_expo/static/media/font.woff2',
+    '/assets/train.png',
+    '/assets/train%20map%231.png',
+    '/assets/font.woff2',
   ];
   for (const path of assetPaths) {
     let responsePromise;
@@ -126,30 +121,28 @@ test('offline worker serves exported image and font files from its cache', async
     assert.equal(intercepted, false, 'API and authenticated requests stay on the network path');
   }
 
-  const repeatedBuild = spawnSync(process.execPath, [join(scripts, 'build-web.mjs')], {
+  const repeatedBuild = spawnSync(process.execPath, [join(projectRoot, 'scripts/build-web.mjs')], {
     cwd: fixture,
     encoding: 'utf8',
-    env: { ...process.env, EXPO_PUBLIC_API_URL: 'http://192.168.1.20:3000/api/v1' },
+    env: { ...process.env, VITE_API_URL: 'http://192.168.1.20:3000/api/v1' },
   });
   assert.equal(repeatedBuild.status, 0, repeatedBuild.stderr);
   assert.equal(readFileSync(join(dist, 'sw.js'), 'utf8'), swSource);
 });
 
-test('offline worker build reads the configured API URL from the production env file', (t) => {
+test('desktop API origin follows Vite production env precedence and expansion', (t) => {
   const fixture = mkdtempSync(join(tmpdir(), 'viendu-env-'));
   t.after(() => rmSync(fixture, { recursive: true, force: true }));
 
-  const scripts = join(fixture, 'scripts');
   const dist = join(fixture, 'dist');
-  mkdirSync(scripts, { recursive: true });
-  mkdirSync(join(dist, '_expo/static'), { recursive: true });
-  cpSync(join(projectRoot, 'scripts/build-web.mjs'), join(scripts, 'build-web.mjs'));
-  writeFileSync(join(fixture, '.env.production'), 'EXPO_PUBLIC_API_URL="https://api.example.test/api/v1" # release endpoint\n');
+  mkdirSync(join(dist, 'assets'), { recursive: true });
+  writeFileSync(join(fixture, '.env.local'), 'VITE_API_URL=http://localhost:3000/api/v1\n');
+  writeFileSync(join(fixture, '.env.production'), 'API_HOST=api.example.test\nVITE_API_URL="https://${API_HOST}/api/v1" # release endpoint\n');
   writeFileSync(join(dist, 'index.html'), '<html lang="en"><body></body></html>');
 
   const env = { ...process.env };
-  delete env.EXPO_PUBLIC_API_URL;
-  const build = spawnSync(process.execPath, [join(scripts, 'build-web.mjs')], {
+  delete env.VITE_API_URL;
+  const build = spawnSync(process.execPath, [join(projectRoot, 'scripts/build-web.mjs')], {
     cwd: fixture,
     encoding: 'utf8',
     env,
@@ -161,20 +154,20 @@ test('offline worker build reads the configured API URL from the production env 
   );
 });
 
-test('desktop prepare step copies the complete web export and preserves the prior bundle on failure', (t) => {
+test('desktop prepare step copies the complete web build and preserves the prior bundle on failure', (t) => {
   const fixture = mkdtempSync(join(tmpdir(), 'viendu-prepare-web-'));
   t.after(() => rmSync(fixture, { recursive: true, force: true }));
 
   const desktop = join(fixture, 'desktop');
   const source = join(fixture, 'dist');
   const target = join(desktop, 'web-dist');
-  mkdirSync(join(source, '_expo/static/media'), { recursive: true });
+  mkdirSync(join(source, 'assets'), { recursive: true });
   mkdirSync(desktop, { recursive: true });
   cpSync(join(projectRoot, 'desktop/prepare-web.cjs'), join(desktop, 'prepare-web.cjs'));
   writeFileSync(join(source, 'index.html'), 'web shell');
   writeFileSync(join(source, 'desktop-config.json'), '{"apiOrigin":"https://api.example.test"}');
   writeFileSync(join(source, 'metadata.json'), '{"version":"fixture"}');
-  writeFileSync(join(source, '_expo/static/media/train.png'), Buffer.from([11, 12, 13]));
+  writeFileSync(join(source, 'assets/train.png'), Buffer.from([11, 12, 13]));
 
   const prepare = () => spawnSync(process.execPath, [join(desktop, 'prepare-web.cjs')], {
     cwd: fixture,
@@ -184,7 +177,7 @@ test('desktop prepare step copies the complete web export and preserves the prio
   assert.equal(good.status, 0, good.stderr);
   assert.equal(readFileSync(join(target, 'metadata.json'), 'utf8'), '{"version":"fixture"}');
   assert.deepEqual(
-    [...readFileSync(join(target, '_expo/static/media/train.png'))],
+    [...readFileSync(join(target, 'assets/train.png'))],
     [11, 12, 13],
   );
   assert.equal(

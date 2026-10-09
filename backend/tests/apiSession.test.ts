@@ -7,7 +7,6 @@ const storage = vi.hoisted(() => ({
   set: vi.fn(),
   clear: vi.fn(),
 }));
-vi.mock("react-native", () => ({ Platform: { OS: "web" } }));
 vi.mock("../../src/services/tokenStorage", () => ({ tokenStorage: storage }));
 
 function deferred<T>() {
@@ -125,7 +124,7 @@ describe("API account boundaries", () => {
     expect(await api.getAccessToken()).toBe("fresh-access");
   });
 
-  it("serializes secure storage writes when logout happens during login", async () => {
+  it("serializes credential storage writes when logout happens during login", async () => {
     const pending = deferred<void>();
     storage.set.mockImplementationOnce(async (value: string) => {
       await pending.promise;

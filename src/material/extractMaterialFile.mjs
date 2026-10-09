@@ -71,6 +71,8 @@ function makeResult(file, status, text = '', format = '') {
 }
 
 function safeText(value) {
+  // Text imported from files must not retain NUL bytes.
+  // eslint-disable-next-line no-control-regex
   const text = String(value ?? '').replace(/\u0000/g, '').trim();
   return text;
 }
@@ -89,6 +91,8 @@ function decodeText(bytes) {
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) encoding = 'utf-16le';
   else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) encoding = 'utf-16be';
   const decoded = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  // Reject binary/control bytes while accepting tabs and line breaks.
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(decoded)) {
     throw new TypeError('Binary data is not safe to use as quiz text.');
   }
