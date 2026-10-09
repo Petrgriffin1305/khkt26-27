@@ -36,6 +36,40 @@ describe("API account boundaries", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("explains the registration password rejection instead of exposing Zod JSON", async () => {
+    const issues = [{
+      origin: "string", code: "invalid_format", format: "regex",
+      pattern: "/[^a-zA-Z0-9]/", path: ["password"],
+      message: "Invalid string: must match pattern /[^a-zA-Z0-9]/",
+    }];
+    fetchMock.mockResolvedValueOnce(response({
+      type: "https://api.pomodoro-focus.com/errors/validation-error",
+      title: "validation error", status: 400, detail: JSON.stringify(issues),
+      instance: "/api/v1/auth/register",
+      errors: [{ field: "password", message: issues[0].message }],
+    }, 400));
+    const error = await api.post("/auth/register", {
+      email: "registration@example.com", name: "Nguyễn An", password: "Password123",
+    }, false).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(api.ApiError);
+    expect(error).toMatchObject({ status: 400 });
+    expect((error as Error).message).toMatch(/Mật khẩu.*chữ hoa.*số.*ký tự đặc biệt/);
+    expect((error as Error).message).not.toMatch(/invalid_format|pattern|regex/);
+  });
+
+  it("explains the UTF-8 password limit with an actionable registration error", async () => {
+    fetchMock.mockResolvedValueOnce(response({
+      detail: '[{"code":"custom","path":["password"]}]',
+      errors: [{ field: "password", message: "Password must be at most 72 UTF-8 bytes" }],
+    }, 400));
+    await expect(api.post("/auth/register", {}, false)).rejects.toThrow(/Mật khẩu quá dài.*rút ngắn/);
+  });
+
+  it("offers sign-in when the registration email already exists", async () => {
+    fetchMock.mockResolvedValueOnce(response({ detail: "Resource already exists" }, 409));
+    await expect(api.post("/auth/register", {}, false)).rejects.toThrow(/Email.*đăng ký.*đăng nhập/);
+  });
+
   it("does not overwrite a new login with an old refresh response", async () => {
     await api.acceptTokens(tokens("old"));
     const pending = deferred<Response>();

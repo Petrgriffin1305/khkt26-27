@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBrowserView } from "./navigation";
 import { useAuthStore } from "@/store/authStore";
-import { post, request } from "@/services/api";
+import { post, request, REGISTRATION_PASSWORD_HINT } from "@/services/api";
 import { Scene } from "./Scene";
 import { JourneyView } from "./JourneyView";
 import { DurationPicker } from "./DurationPicker";
@@ -1819,6 +1819,10 @@ function AdventureWorkspace() {
                           required
                           type="password"
                           minLength={8}
+                          maxLength={authMode === "register" ? 72 : undefined}
+                          pattern={authMode === "register" ? "(?=.*[A-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,72}" : undefined}
+                          title={authMode === "register" ? REGISTRATION_PASSWORD_HINT : undefined}
+                          aria-describedby={authMode === "register" ? "registration-password-hint" : undefined}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           autoComplete={
@@ -1828,6 +1832,9 @@ function AdventureWorkspace() {
                           }
                         />
                       </label>
+                      {authMode === "register" && (
+                        <small id="registration-password-hint">{REGISTRATION_PASSWORD_HINT}</small>
+                      )}
                       <button className="primary" disabled={busy || (!!active && !needsLogin)}>
                         {busy
                           ? "Đang kết nối…"

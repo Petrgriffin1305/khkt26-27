@@ -3,6 +3,8 @@ import type { Tokens } from "./contracts";
 import { resolveApiUrl } from "./apiUrl";
 
 export const API_URL = resolveApiUrl(import.meta.env.VITE_API_URL);
+export const REGISTRATION_PASSWORD_HINT =
+  "Mật khẩu cần từ 8 đến 72 ký tự, có chữ hoa, số và ký tự đặc biệt (ví dụ: @, !, #).";
 let accessToken: string | null = null;
 let expiresAt = 0;
 let refreshing: { generation: number; promise: Promise<void> } | null = null;
@@ -102,7 +104,7 @@ async function fetchWithTimeout(path: string, init: RequestInit) {
     clearTimeout(timeout);
   }
 }
-async function decode<T>(response: Response): Promise<T> {
+async function decode<T>(response: Response, path?: string): Promise<T> {
   if (response.status === 204) return undefined as T;
   let body: unknown;
   try {
@@ -111,7 +113,18 @@ async function decode<T>(response: Response): Promise<T> {
     throw new ApiError(response.status, "Máy chủ trả về dữ liệu không hợp lệ.");
   }
   if (!response.ok) {
-    const problem = body as { detail?: string };
+    const problem = body as { detail?: string; errors?: { field?: string; message?: string }[] };
+    if (path === "/auth/register") {
+      if (response.status === 409)
+        throw new ApiError(409, "Email này đã được đăng ký. Hãy đăng nhập hoặc dùng email khác.");
+      if (response.status === 400 && Array.isArray(problem.errors)) {
+        const passwordErrors = problem.errors.filter((error) => error.field === "password");
+        if (passwordErrors.length)
+          throw new ApiError(400, passwordErrors.some((error) => error.message?.includes("72 UTF-8 bytes"))
+            ? "Mật khẩu quá dài. Hãy rút ngắn mật khẩu, nhất là khi dùng ký tự có dấu."
+            : REGISTRATION_PASSWORD_HINT);
+      }
+    }
     throw new ApiError(response.status, problem.detail ?? "Yêu cầu thất bại.");
   }
   return body as T;
@@ -177,7 +190,7 @@ export async function request<T>(
     headers.set("Authorization", `Bearer ${accessToken}`);
     response = await fetchWithTimeout(path, { ...init, headers });
   }
-  const result = await decode<T>(response);
+  const result = await decode<T>(response, path);
   if (authenticated) assertGeneration(current);
   return result;
 }
