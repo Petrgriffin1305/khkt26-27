@@ -27,4 +27,7 @@ jobs:
       - run: npm run build
         working-directory: backend
       - run: npm run build:web
+        env:
+          # Metro's first OfficeParser transform exceeds the runner's default 2 GB heap.
+          NODE_OPTIONS: --max-old-space-size=4096
       - run: docker build -t pomodoro-api backend

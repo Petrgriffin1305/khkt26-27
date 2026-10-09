@@ -22,6 +22,8 @@ jobs:
       - run: npm run test:mobile
       - run: npm run build:web
         env:
+          # Metro's first OfficeParser transform exceeds the runner's default 2 GB heap.
+          NODE_OPTIONS: --max-old-space-size=4096
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
       - run: npm ci --prefix desktop
       - run: npm --prefix desktop run typecheck
