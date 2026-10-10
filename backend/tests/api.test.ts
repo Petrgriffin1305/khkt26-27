@@ -60,6 +60,7 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 let headers: Record<string, string>;
 let stranger: Record<string, string>;
 let userId: string;
+let otherUserId: string;
 let questionId: string;
 let sessionId: string;
 const session = () => ({
@@ -88,6 +89,7 @@ beforeAll(async () => {
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261007000000_adventure/migration.sql", import.meta.url), "utf8"));
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261009000000_tester_runs/migration.sql", import.meta.url), "utf8"));
   await pg.exec(readFileSync(new URL("../prisma/migrations/20261009100000_quiz_knowledge_point/migration.sql", import.meta.url), "utf8"));
+  await pg.exec(readFileSync(new URL("../prisma/migrations/20261010120000_remove_static_quiz_bank/migration.sql", import.meta.url), "utf8"));
   await server.start();
   app = await buildApp({ db, redis: redis as unknown as Redis, logger: false });
   await app.ready();
@@ -101,6 +103,7 @@ beforeAll(async () => {
   const other = await db.user.create({
     data: { email: "other@example.com", name: "Other" },
   });
+  otherUserId = other.id;
   headers = {
     authorization: `Bearer ${(await issueTokens(db, user)).access_token}`,
   };
@@ -111,10 +114,12 @@ beforeAll(async () => {
     await db.quizQuestion.create({
       data: {
         topic_id: "biology",
+        owner_id: userId,
         question: "Question",
         options: ["A", "B", "C", "D"],
         correct_index: 1,
         explanation: "Explanation",
+        source: "gemini_generated",
       },
     })
   ).id;
@@ -613,6 +618,51 @@ it("scores on server and retries answers without duplication", async () => {
     ).statusCode,
   ).toBe(404);
 });
+it("lists and grades only owned AI questions in the legacy quiz routes", async () => {
+  const makeQuestion = (ownerId: string | null, source: string, question: string) =>
+    db.quizQuestion.create({
+      data: {
+        topic_id: "biology", owner_id: ownerId, question,
+        options: ["A", "B", "C", "D"], correct_index: 1,
+        explanation: "Fixture explanation", source,
+      },
+    });
+  const ownedAi = await makeQuestion(userId, "ai_generated", "Owned AI fixture");
+  const ownedGemini = await makeQuestion(userId, "gemini_generated", "Owned Gemini fixture");
+  const ownedStatic = await makeQuestion(userId, "static", "Owned static fixture");
+  const sharedAi = await makeQuestion(null, "gemini_generated", "Shared AI fixture");
+  const otherAi = await makeQuestion(otherUserId, "gemini_generated", "Other AI fixture");
+
+  const listing = await app.inject({ url: "/api/v1/quizzes?topic_id=biology", headers });
+  expect(listing.statusCode).toBe(200);
+  const listedIds = listing.json().questions.map((question: { id: string }) => question.id);
+  expect(listedIds).toContain(ownedAi.id);
+  expect(listedIds).toContain(ownedGemini.id);
+  for (const excluded of [ownedStatic, sharedAi, otherAi]) expect(listedIds).not.toContain(excluded.id);
+
+  const saved = await app.inject({ method: "POST", url: "/api/v1/sessions", headers, payload: session() });
+  expect(saved.statusCode).toBe(201);
+  const answer = (questionId: string) => app.inject({
+    method: "POST", url: "/api/v1/quizzes/answer", headers,
+    payload: { session_id: saved.json().id, question_id: questionId, selected_index: 1 },
+  });
+  expect((await answer(ownedAi.id)).statusCode).toBe(201);
+  expect((await answer(ownedGemini.id)).statusCode).toBe(201);
+  for (const excluded of [ownedStatic, sharedAi, otherAi])
+    expect((await answer(excluded.id)).statusCode).toBe(404);
+  for (const excluded of [ownedStatic, sharedAi, otherAi]) {
+    const assessment = await app.inject({
+      method: "POST", url: "/api/v1/adventure/quiz", headers,
+      payload: { sessionId: randomUUID(), answers: [{ id: excluded.id, selected: 1 }] },
+    });
+    expect(assessment.statusCode).toBe(403);
+  }
+  // Keep this ownership fixture isolated from subsequent listing tests.
+  await db.studySession.delete({ where: { id: saved.json().id } });
+  await db.quizQuestion.deleteMany({
+    where: { id: { in: [ownedAi, ownedGemini, ownedStatic, sharedAi, otherAi].map(row => row.id) } },
+  });
+});
 it("uploads multipart text, generates private questions, enforces ownership and deletes", async () => {
   const boundary = "test-boundary";
   const payload = `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\nStudy notes\r\n--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="notes.txt"\r\nContent-Type: text/plain\r\n\r\nStudy material\r\n--${boundary}--\r\n`;
@@ -659,7 +709,7 @@ it("uploads multipart text, generates private questions, enforces ownership and 
         headers: stranger,
       })
     ).json().questions,
-  ).toHaveLength(1);
+  ).toHaveLength(0);
   expect(
     (
       await app.inject({
@@ -947,7 +997,7 @@ it("serializes concurrent invitations without exceeding six members", async () =
 it("grades thirty answers from trusted question data, freezes the first assessment, and protects owners", async () => {
   const questionRows = await Promise.all(Array.from({ length: 30 }, (_, index) =>
     db.quizQuestion.create({ data: {
-      topic_id: "biology", owner_id: null, question: `Trusted question ${index}`,
+      topic_id: "biology", owner_id: userId, question: `Trusted question ${index}`,
       options: ["A", "B", "C", "D"], correct_index: index % 4,
       explanation: `Trusted explanation ${index}`,
       knowledge_point: index === 0 ? null : `Trusted concept ${index}`,
@@ -1024,17 +1074,22 @@ it("grades thirty answers from trusted question data, freezes the first assessme
     create: { id: "mathematics", name: "Mathematics", icon: "📐" },
     update: {} });
   const wrongTopic = await db.quizQuestion.create({ data: {
-    topic_id: "mathematics", owner_id: null, question: "Other topic question",
+    topic_id: "mathematics", owner_id: userId, question: "Other topic question",
     options: ["A", "B", "C", "D"], correct_index: 1, explanation: "Other topic explanation",
   } });
   const mismatch = await app.inject({ method: "POST", url: "/api/v1/adventure/quiz", headers,
     payload: { sessionId: id, answers: [{ id: wrongTopic.id, selected: 1 }] } });
   expect(mismatch.statusCode).toBe(400);
+  const otherQuestion = await db.quizQuestion.create({ data: {
+    topic_id: "biology", owner_id: otherUserId, question: "Other owner AI question",
+    options: ["A", "B", "C", "D"], correct_index: 1, explanation: "Other owner explanation",
+    source: "gemini_generated",
+  } });
   const other = await app.inject({
     method: "POST",
     url: "/api/v1/adventure/quiz",
     headers: stranger,
-    payload: { sessionId: id, answers: [{ id: questionId, selected: 1 }] },
+    payload: { sessionId: id, answers: [{ id: otherQuestion.id, selected: 1 }] },
   });
   expect(other.statusCode).toBe(404);
 });
@@ -1065,7 +1120,7 @@ it("rolls back the entire Gemini quiz if a database insert fails", async () => {
   // Socket detach rolls back asynchronously; wait for it before reading the shared PGlite DB.
   await expect.poll(() => pg.isInTransaction(), { timeout: 5000 }).toBe(false);
   const rows = await pg.query<{ count: number }>(
-    "SELECT COUNT(*)::int AS count FROM quiz_bank WHERE owner_id=$1", [userId],
+    "SELECT COUNT(*)::int AS count FROM ai_questions WHERE owner_id=$1", [userId],
   );
   expect(rows.rows[0].count).toBe(before);
 });

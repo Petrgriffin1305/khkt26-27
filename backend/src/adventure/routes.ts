@@ -291,7 +291,8 @@ export function adventureRoutes(
     const questions = await db.quizQuestion.findMany({
       where: {
         id: { in: value.answers.map((a) => a.id) },
-        OR: [{ owner_id: null }, { owner_id: req.userId }],
+        owner_id: req.userId,
+        source: { in: ["gemini_generated", "ai_generated"] },
       },
     });
     if (questions.length !== value.answers.length)

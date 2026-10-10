@@ -74,6 +74,52 @@ export function breakRemainingSeconds(
   return breakStatus(s, now)?.remainingSeconds ?? 0;
 }
 
+export type StudyStageStatus = {
+  /** Zero-based study-stage index; scheduled breaks are not stages. */
+  index: number;
+  /** Number of study stages, which is one more than the scheduled break count. */
+  count: number;
+  startedAt: number;
+  endsAt: number;
+  remainingSeconds: number;
+};
+
+/** Current focused-work interval, excluding scheduled break intervals. */
+export function studyStageStatus(
+  s: Pick<ActiveTrip, "started" | "target" | "breakPlan">,
+  now: number,
+): StudyStageStatus | null {
+  if (
+    !Number.isFinite(s.started) ||
+    !Number.isFinite(s.target) ||
+    s.target <= 0 ||
+    !Number.isFinite(now)
+  ) return null;
+
+  const deadline = s.started + totalDuration(s) * 1000;
+  if (!Number.isFinite(deadline)) return null;
+  const at = Math.max(s.started, now);
+  const windows = breakWindows(s.started, s.target, s.breakPlan);
+  if (windows.some((window) => at >= window.start && at < window.end)) return null;
+
+  let stageStart = s.started;
+  for (let index = 0; index <= windows.length; index++) {
+    const endsAt = index < windows.length ? windows[index].start : deadline;
+    const isFinal = index === windows.length;
+    if (at < endsAt || isFinal) {
+      return {
+        index,
+        count: windows.length + 1,
+        startedAt: stageStart,
+        endsAt,
+        remainingSeconds: Math.max(0, Math.ceil((endsAt - at) / 1000)),
+      };
+    }
+    stageStart = windows[index].end;
+  }
+  return null;
+}
+
 export function breakElapsedSeconds(
   s: Pick<ActiveTrip, "started" | "target" | "breakPlan">,
   now: number,

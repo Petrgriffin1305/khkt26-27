@@ -1,3 +1,24 @@
+import { useId } from "react";
+import {
+  breakWindows,
+  totalDurationSeconds,
+  type BreakPlan,
+} from "../../backend/src/adventure/domain.ts";
+import "./duration.css";
+
+const QUICK_TIMES = [15, 25, 45, 60] as const;
+
+function clockTime(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+function inputValue(value: number): number | "" {
+  return Number.isFinite(value) ? value : "";
+}
+
 export function DurationPicker({
   value,
   onChange,
@@ -13,12 +34,58 @@ export function DurationPicker({
   onBreakCountChange?: (count: number) => void;
   onBreakMinutesChange?: (minutes: number) => void;
 }) {
+  const id = useId();
+  const durationHelpId = `${id}-duration-help`;
+  const breakHelpId = `${id}-break-help`;
+  const breakErrorId = `${id}-break-error`;
+  const canConfigureBreaks = Boolean(onBreakCountChange && onBreakMinutesChange);
+
+  const durationValid = Number.isSafeInteger(value) && value >= 1 && value <= 240;
+  const maxBreakCount = durationValid ? Math.min(10, value - 1) : 0;
+  const breakCountValid = Number.isSafeInteger(breakCount) &&
+    breakCount >= 0 && breakCount <= maxBreakCount;
+  // A zero count makes the rest duration irrelevant, including while it is blank.
+  const breakMinutesValid = breakCount === 0 || (
+    Number.isSafeInteger(breakMinutes) && breakMinutes >= 1 && breakMinutes <= 30
+  );
+  const breakInputsValid = breakCountValid && breakMinutesValid;
+  const previewValid = durationValid && breakInputsValid;
+  const breakPlan: BreakPlan | undefined = breakCount > 0
+    ? { count: breakCount, seconds: breakMinutes * 60 }
+    : undefined;
+  const breakIntervals = previewValid && breakCount > 0
+    ? breakWindows(0, value * 60, breakPlan)
+    : [];
+  const totalSeconds = previewValid
+    ? totalDurationSeconds(value * 60, breakPlan)
+    : null;
+
+  const timeline: string[] = [];
+  if (previewValid && totalSeconds !== null) {
+    let cursor = 0;
+    for (const interval of breakIntervals) {
+      const studySeconds = (interval.start - cursor) / 1000;
+      if (studySeconds > 0) timeline.push(`Học ${clockTime(studySeconds)}`);
+      timeline.push(`Nghỉ ${clockTime((interval.end - interval.start) / 1000)}`);
+      cursor = interval.end;
+    }
+    const lastStudySeconds = (totalSeconds * 1000 - cursor) / 1000;
+    if (lastStudySeconds > 0) timeline.push(`Học ${clockTime(lastStudySeconds)}`);
+  }
+
+  const breakError = !breakCountValid
+    ? "Số lượt nghỉ phải là số nguyên từ 0 đến ít hơn số phút học, tối đa 10 lượt."
+    : !breakMinutesValid
+      ? "Mỗi lượt nghỉ cần từ 1 đến 30 phút."
+      : null;
+
   return (
     <div className="duration-picker">
-      <div className="quick-times" aria-label="Thời gian gợi ý">
-        {[15, 25, 45, 60].map((minutes) => (
+      <div className="quick-times" role="group" aria-label="Thời gian gợi ý">
+        {QUICK_TIMES.map((minutes) => (
           <button
             key={minutes}
+            type="button"
             aria-pressed={value === minutes}
             className={value === minutes ? "selected" : ""}
             onClick={() => onChange(minutes)}
@@ -27,39 +94,109 @@ export function DurationPicker({
           </button>
         ))}
       </div>
-      <label className="custom-duration">
+      <label className="custom-duration" htmlFor={`${id}-duration`}>
         Thời gian tùy chỉnh
         <span>
           <input
+            id={`${id}-duration`}
             type="number"
             inputMode="numeric"
             min={1}
             max={240}
             step={1}
-            value={Number.isNaN(value) ? "" : value}
-            onChange={(e) =>
-              onChange(e.target.value === "" ? NaN : Number(e.target.value))
+            value={inputValue(value)}
+            onChange={(event) =>
+              onChange(event.target.value === "" ? NaN : Number(event.target.value))
             }
-            aria-describedby="duration-help"
+            aria-describedby={durationHelpId}
+            aria-invalid={!durationValid}
           />
           <span>phút</span>
         </span>
       </label>
-      <small id="duration-help">
+      <small id={durationHelpId}>
         Nhập từ 1 đến 240 phút, theo nhịp học của bạn.
       </small>
-      {onBreakCountChange && onBreakMinutesChange && <fieldset className="break-picker">
-        <legend>Trạm dừng chân giữa giờ</legend>
-        <label>Số lượt giải lao<input type="number" min={0} max={Math.max(0,Math.min(10,(Number.isFinite(value) ? Math.floor(value) : 1)-1))} step={1} value={Number.isNaN(breakCount) ? "" : breakCount} onChange={(e) => onBreakCountChange(e.target.value === "" ? NaN : Number(e.target.value))} /></label>
-        <label>Phút mỗi lượt<input type="number" min={1} max={30} step={1} disabled={breakCount === 0} value={Number.isNaN(breakMinutes) ? "" : breakMinutes} onChange={(e) => onBreakMinutesChange(e.target.value === "" ? NaN : Number(e.target.value))} /></label>
-        <small>Chọn 0 để học liền. Các trạm được chia đều tự động; giải lao không cộng XP và không bị tính xao nhãng. Rời phiên ngoài lịch nghỉ vẫn tính xao nhãng.</small>
-        {Number.isInteger(breakCount) && (breakCount === 0 || Number.isInteger(breakMinutes)) && <p>{value} phút học + {breakCount === 0 ? 0 : breakCount * breakMinutes} phút giải lao · tổng {value + (breakCount === 0 ? 0 : breakCount * breakMinutes)} phút.</p>}
-        {(!Number.isInteger(breakCount) || breakCount < 0 || breakCount > 10 || breakCount >= value || (breakCount !== 0 && (!Number.isInteger(breakMinutes) || breakMinutes < 1 || breakMinutes > 30))) && <p className="duration-error" role="alert">Chọn 0–10 lượt, ít hơn số phút học; mỗi lượt 1–30 phút.</p>}
-      </fieldset>}
-      {(!Number.isInteger(value) || value < 1 || value > 240) && (
+
+      {canConfigureBreaks && (
+        <fieldset className="duration-breaks">
+          <legend>Trạm dừng chân giữa giờ</legend>
+          <div className="duration-break-grid">
+            <label className="duration-break-field" htmlFor={`${id}-break-count`}>
+              <span>Số lượt giải lao</span>
+              <input
+                id={`${id}-break-count`}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={maxBreakCount}
+                step={1}
+                value={inputValue(breakCount)}
+                onChange={(event) =>
+                  onBreakCountChange?.(event.target.value === "" ? NaN : Number(event.target.value))
+                }
+                aria-describedby={`${breakHelpId}${breakError ? ` ${breakErrorId}` : ""}`}
+                aria-invalid={Boolean(breakError)}
+              />
+            </label>
+            <label className="duration-break-field" htmlFor={`${id}-break-minutes`}>
+              <span>Phút mỗi lượt</span>
+              <input
+                id={`${id}-break-minutes`}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={30}
+                step={1}
+                disabled={breakCount === 0}
+                value={inputValue(breakMinutes)}
+                onChange={(event) =>
+                  onBreakMinutesChange?.(event.target.value === "" ? NaN : Number(event.target.value))
+                }
+                aria-describedby={breakHelpId}
+                aria-invalid={breakCount !== 0 && !breakMinutesValid}
+              />
+            </label>
+          </div>
+          <small id={breakHelpId}>
+            Chọn 0 để học liền. Các trạm được chia đều tự động; giải lao không cộng XP và không bị tính xao nhãng. Rời phiên ngoài lịch nghỉ vẫn tính xao nhãng.
+          </small>
+          {breakError && (
+            <p id={breakErrorId} className="duration-error" role="alert">
+              {breakError}
+            </p>
+          )}
+        </fieldset>
+      )}
+
+      {!durationValid && (
         <p role="alert" className="duration-error">
           Vui lòng nhập số phút nguyên từ 1 đến 240.
         </p>
+      )}
+
+      {canConfigureBreaks && (
+        <section className="duration-total" aria-live="polite" aria-atomic="true">
+          {totalSeconds === null ? (
+            <p className="duration-total-invalid">
+              Hãy sửa thời gian học và lịch nghỉ để xem tổng thời lượng.
+            </p>
+          ) : (
+            <>
+              <div className="duration-total-heading">
+                <span>Tổng thời lượng</span>
+                <strong>{totalSeconds / 60} phút</strong>
+              </div>
+              <p className="duration-total-detail">
+                {value} phút học
+                {breakCount > 0 ? ` + ${breakCount * breakMinutes} phút giải lao` : " liên tục"}
+              </p>
+              <p className="duration-timeline" aria-label="Trình tự phiên học">
+                {timeline.join(" → ")}
+              </p>
+            </>
+          )}
+        </section>
       )}
     </div>
   );

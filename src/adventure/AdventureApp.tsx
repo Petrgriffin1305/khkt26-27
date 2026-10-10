@@ -16,6 +16,7 @@ import { GuestHistorySync } from "./GuestHistorySync";
 import { studyTopics } from "./topics";
 import {
   breakStatus,
+  studyStageStatus,
   totalDuration,
   depart,
   elapsedSeconds,
@@ -114,7 +115,7 @@ function AdventureWorkspace() {
     [documentText, setDocumentText] = useState("");
   const [sources, setSources] = useState<MaterialSource[]>([]);
   const originalFiles = useRef(new Map<string, File>());
-  const [handwritten, setHandwritten] = useState(false);
+  const [preferAiReading, setPreferAiReading] = useState(false);
   const [materials, setMaterials] = useState<MaterialInfo[]>([]);
   const [materialProgress, setMaterialProgress] = useState<(MaterialExtractionProgress & { file: string }) | null>(null);
   const materialRequest = useRef<AbortController | null>(null);
@@ -424,7 +425,9 @@ function AdventureWorkspace() {
     ? tick(saved.active, Math.max(now, saved.active.lastAt))
     : null;
   // Group contributions need server confirmation of membership and the daily cap.
-  const rest = active ? breakStatus(active, now) : null;
+  const displayAt = active ? Math.max(now, active.lastAt) : now;
+  const rest = active ? breakStatus(active, displayAt) : null;
+  const studyStage = active ? studyStageStatus(active, displayAt) : null;
   const mapActive = active && !(mode === "group" && group) && active.groupId === null ? active : null;
   const mapProgress = explorationProgress(journey, mapActive ? focused(mapActive) : 0, mapActive?.target);
   const sessions = [...saved.pending, ...(data?.sessions ?? [])];
@@ -584,8 +587,8 @@ function AdventureWorkspace() {
         if (!isCurrent()) return;
         setMaterialProgress({ file: file.name, phase: "loading", progress: 0 });
         const remaining = Math.max(0, 50000 - used - file.name.length - 12);
-        const result = handwritten && file.size <= 32 * 1024 * 1024 && /\.(pdf|png|jpe?g|webp)$/i.test(file.name)
-          ? {name:file.name,size:file.size,type:file.type,text:"",status:"empty",message:"Chữ viết tay: chọn Đọc bằng AI hoặc nhập bản chép rồi xác nhận.",source:"local-ocr",quality:"needs-review"}
+        const result = preferAiReading && file.size <= 32 * 1024 * 1024 && /\.(pdf|png|jpe?g|webp)$/i.test(file.name)
+          ? {name:file.name,size:file.size,type:file.type,text:"",status:"empty",message:"Tài liệu đang chờ đọc. Bấm Đọc bằng AI rồi kiểm tra nội dung.",source:"local-ocr",quality:"needs-review"}
           : await extractMaterialFile(file, {
           maxTextChars: remaining,
           signal: controller.signal,
@@ -617,7 +620,7 @@ function AdventureWorkspace() {
   }
   async function readHandwriting(sourceId: string) {
     if (busy || materialRequest.current || view !== "ticket") return;
-    if (!user || needsLogin) { setError("Đăng nhập để đọc chữ viết tay bằng AI."); return; }
+    if (!user || needsLogin) { setError("Đăng nhập để đọc tài liệu bằng AI."); return; }
     const file = originalFiles.current.get(sourceId);
     if (!file || file.size > 32 * 1024 * 1024) { setError("Hãy nhập lại tệp gốc, tối đa 32 MiB."); return; }
     const id = ownerRef.current;
@@ -642,7 +645,7 @@ function AdventureWorkspace() {
       setSources((items) => items.map((source) => source.id === sourceId ? {...source,text:result.text,source:"ai-vision",requiresReview:true,reviewed:false} : source));
       setMaterials((items) => items.map((item) => item.sourceId === sourceId ? {...item,status:result.text ? "extracted" : "empty",message:result.message ?? "AI đã đọc. Hãy kiểm tra từ vựng, nghĩa và các chỗ [không rõ]."} : item));
       setNotice("AI đã đọc tệp gốc. Kiểm tra và sửa nội dung trước khi xác nhận làm nguồn câu hỏi.");
-    } catch(e) { if (isCurrent()) setError(e instanceof Error ? e.message : "Không đọc được chữ viết tay."); }
+    } catch(e) { if (isCurrent()) setError(e instanceof Error ? e.message : "Không đọc được tài liệu."); }
     finally { if (materialRequest.current === controller) { materialRequest.current = null; if(workspaceLive.current && ownerRef.current === id) {setBusy(false);setMaterialProgress(null);} } }
   }
   function exportRawData() {
@@ -1052,19 +1055,26 @@ function AdventureWorkspace() {
                       </label>
                       <DurationPicker value={minutes} onChange={setMinutes} breakCount={breakCount} breakMinutes={breakMinutes} onBreakCountChange={setBreakCount} onBreakMinutesChange={setBreakMinutes} />
                       <label>
-                        Ghi chú riêng (độc lập với tệp)
+                        Ghi chú học tập (không bắt buộc)
                         <textarea
                           rows={5}
                           maxLength={50000}
                           disabled={busy}
                           value={documentText}
                           onChange={(e) => setDocumentText(e.target.value)}
-                          placeholder="Dán nội dung bài học. Chỉ gửi tới dịch vụ AI khi bạn chọn tạo quiz."
+                          aria-describedby="notes-help"
+                          placeholder="Ghi lại ý chính hoặc dán nội dung bạn muốn ôn."
                         />
                       </label>
-                      <label className="handwriting-option"><input type="checkbox" checked={handwritten} disabled={busy} onChange={(e) => setHandwritten(e.target.checked)} /> Tài liệu viết tay · đọc bằng AI hoặc tự chép</label>
+                      <p id="notes-help" className="material-hint">Ghi chú được lưu riêng cho chuyến này. Khi không nhập tệp, AI dùng ghi chú cùng chủ đề và mục tiêu để tạo câu hỏi. Khi có tệp, câu hỏi dùng nội dung tài liệu đã xác nhận; sửa ghi chú không thay đổi nguồn đó.</p>
+                      <h3 className="material-title">Tài liệu học tập</h3>
+                      <label className="material-ai-option">
+                        <input type="checkbox" checked={preferAiReading} disabled={busy} onChange={(e) => setPreferAiReading(e.target.checked)} aria-describedby="material-ai-help" />
+                        <span>Ưu tiên dùng AI để đọc PDF/ảnh</span>
+                      </label>
+                      <p id="material-ai-help" className="material-hint">Chọn khi có ảnh quét, chữ viết tay hoặc tệp khó đọc. PDF/ảnh sẽ chờ bạn bấm “Đọc bằng AI” để gửi tới Google Gemini; cần đăng nhập. Để trống ô này nếu muốn đọc văn bản trên thiết bị trước.</p>
                       <label className="file-label">
-                        Nhập tài liệu · mọi loại tệp
+                        Chọn tệp tài liệu
                         <input
                           type="file"
                           multiple
@@ -1085,7 +1095,7 @@ function AdventureWorkspace() {
                         <progress aria-label="Tiến độ đọc tài liệu" max={1} value={materialProgress.progress} />
                         <button onClick={() => materialRequest.current?.abort()}>Hủy đọc tài liệu</button>
                       </div>}
-                      <p className="material-hint">Xóa ghi chú không xóa nguồn tài liệu. Nút “Đọc bằng AI” gửi riêng tệp đã chọn tới máy chủ và Google Gemini để nhận diện chữ viết tay; bạn kiểm tra kết quả trước khi dùng. Tệp gốc chỉ được giữ tạm trong bộ nhớ cửa sổ này.</p>
+                      <p className="material-hint">Nút “Đọc bằng AI” nhận diện nội dung PDF/ảnh, gồm cả chữ in và chữ viết tay. Kiểm tra, sửa rồi xác nhận bản chép trước khi tạo câu hỏi. Tệp gốc được giữ tạm trong bộ nhớ cửa sổ này.</p>
                       {sources.map((source) => <details className="material-source" key={source.id} open={!source.reviewed}>
                         <summary>{source.name} · {source.reviewed ? "Đã kiểm tra" : "Cần kiểm tra nội dung"}</summary>
                         <label>Nội dung nguồn · {source.name}<textarea rows={8} maxLength={50000} disabled={busy} value={source.text} onChange={(e) => setSources((items) => items.map((item) => item.id === source.id ? {...item,text:e.target.value,reviewed:false} : item))} placeholder="Nhập hoặc sửa bản chép đúng của tài liệu. Không tự dịch nội dung." /></label>
@@ -1185,19 +1195,28 @@ function AdventureWorkspace() {
                       </p>
                     </div>
                     <section className="focus-card">
+                      <div className="focus-phase-label">
+                        {rest ? `Trạm dừng chân ${rest.index}/${rest.count}` : `Chặng học ${(studyStage?.index ?? 0) + 1}/${studyStage?.count ?? 1}`}
+                      </div>
                       <div
                         className="timer"
                         role="timer"
-                        aria-label={rest ? "Thời gian giải lao còn lại" : "Thời gian học còn lại"}
+                        aria-label={rest ? "Giải lao còn lại" : "Chặng học còn lại"}
                       >
-                        {clock(rest ? rest.remainingSeconds : active.target - elapsedSeconds(active, now))}
+                        {clock(rest ? rest.remainingSeconds : studyStage?.remainingSeconds ?? active.target - elapsedSeconds(active, displayAt))}
                       </div>
-                      {rest && <p className="break-status" role="status">Trạm dừng chân {rest.index}/{rest.count} · tự tiếp tục lúc {new Date(rest.endsAt).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}</p>}
-                      {active.breakPlan && <p className="material-hint">{active.target / 60} phút học · {active.breakPlan.count} lượt nghỉ × {active.breakPlan.seconds / 60} phút · tổng chuyến {totalDuration(active) / 60} phút</p>}
+                      <p className="focus-next" role="status">
+                        {rest
+                          ? `Tự tiếp tục chặng học ${rest.index + 1}/${rest.count + 1} lúc ${new Date(rest.endsAt).toLocaleTimeString("vi-VN", {hour: "2-digit", minute: "2-digit", second: "2-digit"})}`
+                          : studyStage && studyStage.index < studyStage.count - 1
+                            ? `Tiếp theo: giải lao ${clock(active.breakPlan?.seconds ?? 0)}`
+                            : "Chặng cuối · chuyến hoàn tất khi đồng hồ về 00:00"}
+                      </p>
+                      {active.breakPlan && active.breakPlan.count > 0 && <p className="focus-plan-total">{active.target / 60} phút học + {active.breakPlan.count * active.breakPlan.seconds / 60} phút nghỉ · tổng chuyến {totalDuration(active) / 60} phút</p>}
                       <div className="timer-label">
                         {Math.floor(focused(active) / 60)} PHÚT ĐÃ HỌC ·{" "}
                         {Math.round((focused(active) / active.target) * 100)}%
-                        CHẶNG ĐƯỜNG
+                        CHUYẾN ĐI
                         <br />
                         {active.distractions ?? 0} LẦN XAO NHÃNG
                       </div>
@@ -1798,7 +1817,6 @@ function AdventureWorkspace() {
                         value={clock(summarySession.seconds)}
                         detail="Đã loại khoảng xao nhãng"
                       />
-                      <Stat icon="◷" label="THỜI GIAN GIẢI LAO" value={clock(analyzeSession(summarySession).breakSeconds)} detail="Nghỉ đúng lịch không tính xao nhãng hoặc XP" />
                       <Stat
                         icon="✦"
                         label="KINH NGHIỆM TOA"
@@ -2050,7 +2068,7 @@ function AdventureWorkspace() {
       </div>
       {active && view !== "focus" && (
         <button className="active-trip" onClick={() => go("focus")}>
-          ▥ Chuyến đang chạy · {clock(rest ? rest.remainingSeconds : active.target - elapsedSeconds(active, now))} →
+          ▥ {rest ? `Giải lao ${rest.index}/${rest.count}` : `Chặng học ${(studyStage?.index ?? 0) + 1}/${studyStage?.count ?? 1}`} · {clock(rest ? rest.remainingSeconds : studyStage?.remainingSeconds ?? active.target - elapsedSeconds(active, displayAt))} →
         </button>
       )}
       {confirm && (

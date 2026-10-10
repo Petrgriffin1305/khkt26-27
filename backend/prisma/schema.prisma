@@ -74,23 +74,24 @@ model QuizQuestion {
   explanation   String
   knowledge_point String?
   difficulty    String @default("medium")
-  source        String @default("static")
+  source        String @default("ai_generated")
   created_at    DateTime @default(now())
   topic         Topic @relation(fields: [topic_id], references: [id])
   owner         User? @relation(fields: [owner_id], references: [id], onDelete: Cascade)
   answers       QuizAnswer[]
-  @@index([topic_id, difficulty])
-  @@map("quiz_bank")
+  @@index([topic_id, difficulty], map: "ai_questions_topic_id_difficulty_idx")
+  @@map("ai_questions")
 }
 model QuizAnswer {
-  id             String @id @default(uuid()) @db.Uuid
-  session_id     String @db.Uuid
-  question_id    String @db.Uuid
-  selected_index Int
-  is_correct     Boolean
-  answered_at    DateTime @default(now())
-  session        StudySession @relation(fields: [session_id], references: [id], onDelete: Cascade)
-  question       QuizQuestion @relation(fields: [question_id], references: [id])
+  id                String @id @default(uuid()) @db.Uuid
+  session_id        String @db.Uuid
+  question_id       String? @db.Uuid
+  question_snapshot Json?
+  selected_index    Int
+  is_correct        Boolean
+  answered_at       DateTime @default(now())
+  session           StudySession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  question          QuizQuestion? @relation(fields: [question_id], references: [id])
   @@unique([session_id, question_id])
   @@index([question_id])
   @@map("quiz_sessions")

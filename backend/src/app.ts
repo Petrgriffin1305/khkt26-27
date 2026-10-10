@@ -590,7 +590,8 @@ export async function buildApp(deps?: {
           where: {
             topic_id: q.topic_id,
             difficulty: q.difficulty,
-            OR: [{ owner_id: null }, { owner_id: req.userId }],
+            owner_id: req.userId,
+            source: { in: ["gemini_generated", "ai_generated"] },
           },
           take: q.limit,
           orderBy: { created_at: "desc" },
@@ -618,7 +619,8 @@ export async function buildApp(deps?: {
             where: {
               id: body.question_id,
               topic_id: session.topic_id,
-              OR: [{ owner_id: null }, { owner_id: req.userId }],
+              owner_id: req.userId,
+              source: { in: ["gemini_generated", "ai_generated"] },
             },
           });
           if (!question) missing("Question not found");
